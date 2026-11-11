@@ -56,3 +56,4 @@ flowchart TD
 ### 3.5 Metal / Vulkan Portability
 - Host macOS builds automatically enable the Metal framework for local desktop testing.
 - Android builds compile with ARM NEON CPU compute by default, with Vulkan GPU compute capability-probed dynamically at runtime.
+

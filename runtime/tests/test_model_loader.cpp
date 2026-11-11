@@ -110,3 +110,4 @@ TEST_F(ModelLoaderTest, MmapAndMunmap) {
     auto unmap_res = ModelLoader::munmap_file(map_res.value(), size);
     EXPECT_TRUE(unmap_res.is_ok());
 }
+

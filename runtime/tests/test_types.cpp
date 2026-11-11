@@ -34,3 +34,4 @@ TEST(TypesTest, ResultStatusError) {
     EXPECT_EQ(res.status().code, StatusCode::FILE_NOT_FOUND);
     EXPECT_EQ(res.status().message, "Missing file");
 }
+

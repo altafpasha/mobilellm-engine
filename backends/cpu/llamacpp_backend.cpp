@@ -347,3 +347,4 @@ bool LlamaCppBackend::is_eos_token(BackendSessionHandle, int32_t) const noexcept
 } // namespace mobilellm
 
 #endif
+

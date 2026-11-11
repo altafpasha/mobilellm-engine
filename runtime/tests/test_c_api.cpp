@@ -97,3 +97,4 @@ TEST(CApiTest, FullLifecycle) {
     EXPECT_EQ(mllm_model_unload(engine, model).code, 0);
     EXPECT_EQ(mllm_engine_destroy(engine).code, 0);
 }
+

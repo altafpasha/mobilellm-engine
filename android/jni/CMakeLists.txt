@@ -28,3 +28,4 @@ target_link_libraries(mobilellm_jni PRIVATE
     mobilellm_static
     log
 )
+

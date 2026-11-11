@@ -154,3 +154,4 @@ bool MockBackend::is_eos_token(BackendSessionHandle /*session*/, int32_t token_i
 }
 
 } // namespace mobilellm
+

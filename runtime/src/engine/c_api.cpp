@@ -238,3 +238,4 @@ mllm_status_t mllm_detect_hardware(char* json_buffer, size_t max_len) {
 }
 
 } // extern "C"
+
