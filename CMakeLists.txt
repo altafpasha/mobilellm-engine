@@ -52,6 +52,9 @@ find_package(Threads REQUIRED)
 # Core Runtime Subdirectory
 add_subdirectory(runtime)
 
+# Memory & Scheduler Subdirectory
+add_subdirectory(scheduler)
+
 # Developer Tools
 if (MOBILELLM_BUILD_TOOLS)
     add_subdirectory(tools/developer-cli)
