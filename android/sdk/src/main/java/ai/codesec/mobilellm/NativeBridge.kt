@@ -1,0 +1,68 @@
+package ai.codesec.mobilellm
+
+internal object NativeBridge {
+
+    init {
+        try {
+            System.loadLibrary("mobilellm_jni")
+        } catch (e: UnsatisfiedLinkError) {
+            // When running in host desktop unit tests without native .so
+            System.err.println("MobileLLM: native library libmobilellm_jni.so not loaded: ${e.message}")
+        }
+    }
+
+    @JvmStatic
+    external fun nativeInit(): Long
+
+    @JvmStatic
+    external fun nativeDestroy(engineHandle: Long)
+
+    @JvmStatic
+    external fun nativeLoadModel(
+        engineHandle: Long,
+        modelPath: String,
+        backend: Int,
+        contextLength: Int,
+        nThreads: Int,
+        useMmap: Boolean,
+        memoryBudgetMb: Float
+    ): Long
+
+    @JvmStatic
+    external fun nativeUnloadModel(engineHandle: Long, modelHandle: Long)
+
+    @JvmStatic
+    external fun nativeCreateSession(
+        engineHandle: Long,
+        modelHandle: Long,
+        maxContextTokens: Int,
+        enablePrefixCaching: Boolean
+    ): Long
+
+    @JvmStatic
+    external fun nativeDestroySession(engineHandle: Long, sessionHandle: Long)
+
+    @JvmStatic
+    external fun nativeGenerate(
+        engineHandle: Long,
+        sessionHandle: Long,
+        prompt: String,
+        temperature: Float,
+        topP: Float,
+        topK: Int,
+        minP: Float,
+        repetitionPenalty: Float,
+        maxTokens: Int,
+        callback: NativeCallback
+    ): Long
+
+    @JvmStatic
+    external fun nativeCancel(engineHandle: Long, genHandle: Long)
+
+    @JvmStatic
+    external fun nativeGetVersion(): String
+
+    @JvmStatic
+    external fun nativeDetectHardware(): String
+}
+
