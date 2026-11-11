@@ -80,3 +80,4 @@ TEST(SchedulerStressTest, RapidSessionAllocationLeakCheck) {
     EXPECT_EQ(kv->allocated_blocks_count(), 0);
     EXPECT_EQ(kv->free_blocks_count(), TOTAL_BLOCKS);
 }
+

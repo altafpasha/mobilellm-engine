@@ -221,3 +221,4 @@ uint32_t ContinuousBatchScheduler::active_batch_size() const noexcept {
 }
 
 } // namespace mobilellm::scheduler
+

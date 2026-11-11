@@ -69,3 +69,4 @@ TEST(RequestQueueTest, CapacityExhaustion) {
     EXPECT_FALSE(err.is_ok());
     EXPECT_EQ(err.code, StatusCode::OUT_OF_MEMORY);
 }
+

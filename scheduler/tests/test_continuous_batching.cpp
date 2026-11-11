@@ -96,3 +96,4 @@ TEST(ContinuousBatchingTest, DynamicAdmissionAndRetirement) {
     active = scheduler.step_batch();
     EXPECT_EQ(active, 0);
 }
+

@@ -84,3 +84,4 @@ The continuous batch scheduler executes iteration-level scheduling:
 2. **Decode Stepping:** All active requests in the batch evaluate one token decode step per iteration.
 3. **Instant Retirement:** Requests that generate EOS, hit `max_tokens`, or receive cancellation are retired immediately, freeing their batch slot for waiting requests without stalling the pipeline.
 4. **Fair Scheduling:** Deficit round-robin scheduling across sessions prevents a long-running request from starving interactive sessions.
+

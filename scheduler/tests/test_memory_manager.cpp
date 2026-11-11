@@ -63,3 +63,4 @@ TEST(MemoryManagerTest, HandleTrimMemoryCallback) {
     EXPECT_TRUE(callback_called);
     EXPECT_EQ(received_level, TrimLevel::RUNNING_CRITICAL);
 }
+

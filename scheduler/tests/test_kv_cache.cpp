@@ -92,3 +92,4 @@ TEST(KVCacheTest, BlockExhaustionReturnsOOM) {
     EXPECT_FALSE(res.is_ok());
     EXPECT_EQ(res.status().code, StatusCode::OUT_OF_MEMORY);
 }
+

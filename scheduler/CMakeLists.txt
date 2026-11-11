@@ -56,3 +56,4 @@ if (MOBILELLM_BUILD_TESTS)
     include(GoogleTest)
     gtest_discover_tests(mobilellm_scheduler_tests)
 endif()
+
