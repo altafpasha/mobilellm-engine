@@ -4,11 +4,12 @@ project(mobilellm_jni LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Point to core runtime
-set(MOBILELLM_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+# Point to core MobileLLM root directory
+get_filename_component(MOBILELLM_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
+set(MOBILELLM_ROOT_DIR "${MOBILELLM_ROOT_DIR}" CACHE PATH "MobileLLM Root" FORCE)
 
-# Add core runtime library
-add_subdirectory(${MOBILELLM_ROOT}/runtime ${CMAKE_CURRENT_BINARY_DIR}/runtime_build)
+# Build static core runtime library
+add_subdirectory(${MOBILELLM_ROOT_DIR}/runtime ${CMAKE_CURRENT_BINARY_DIR}/runtime_build)
 
 # JNI Bridge shared library
 add_library(mobilellm_jni SHARED
@@ -16,8 +17,8 @@ add_library(mobilellm_jni SHARED
 )
 
 target_include_directories(mobilellm_jni PRIVATE
-    ${MOBILELLM_ROOT}/runtime/include
-    ${MOBILELLM_ROOT}
+    ${MOBILELLM_ROOT_DIR}/runtime/include
+    ${MOBILELLM_ROOT_DIR}
 )
 
 target_compile_definitions(mobilellm_jni PRIVATE
@@ -28,4 +29,3 @@ target_link_libraries(mobilellm_jni PRIVATE
     mobilellm_static
     log
 )
-

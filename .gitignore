@@ -27,6 +27,10 @@ android/.gradle/
 android/build/
 android/app/build/
 android/sdk/build/
+android/local.properties
+.cxx/
+android/sdk/.cxx/
+android/app/.cxx/
 local.properties
 
 # Python

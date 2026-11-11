@@ -1,12 +1,16 @@
 # runtime/CMakeLists.txt
 
+if (NOT DEFINED MOBILELLM_ROOT_DIR)
+    set(MOBILELLM_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/..")
+endif()
+
 set(MOBILELLM_RUNTIME_SOURCES
     src/model_loader/model_loader.cpp
     src/sampling/sampler.cpp
     src/engine/engine_impl.cpp
     src/engine/c_api.cpp
-    ${CMAKE_SOURCE_DIR}/backends/mock/mock_backend.cpp
-    ${CMAKE_SOURCE_DIR}/backends/cpu/llamacpp_backend.cpp
+    ${MOBILELLM_ROOT_DIR}/backends/mock/mock_backend.cpp
+    ${MOBILELLM_ROOT_DIR}/backends/cpu/llamacpp_backend.cpp
 )
 
 # 1. Shared library: libmobilellm.so / libmobilellm.dylib
@@ -19,7 +23,7 @@ target_include_directories(mobilellm
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
     PRIVATE
-        ${CMAKE_SOURCE_DIR}
+        ${MOBILELLM_ROOT_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
@@ -42,7 +46,7 @@ target_include_directories(mobilellm_static
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
     PRIVATE
-        ${CMAKE_SOURCE_DIR}
+        ${MOBILELLM_ROOT_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
@@ -60,12 +64,12 @@ if (MOBILELLM_ENABLE_LLAMACPP)
     target_link_libraries(mobilellm PRIVATE llama ggml)
     target_link_libraries(mobilellm_static PRIVATE llama ggml)
     target_include_directories(mobilellm PRIVATE
-        ${CMAKE_SOURCE_DIR}/third_party/llama.cpp/include
-        ${CMAKE_SOURCE_DIR}/third_party/llama.cpp/ggml/include
+        ${MOBILELLM_ROOT_DIR}/third_party/llama.cpp/include
+        ${MOBILELLM_ROOT_DIR}/third_party/llama.cpp/ggml/include
     )
     target_include_directories(mobilellm_static PRIVATE
-        ${CMAKE_SOURCE_DIR}/third_party/llama.cpp/include
-        ${CMAKE_SOURCE_DIR}/third_party/llama.cpp/ggml/include
+        ${MOBILELLM_ROOT_DIR}/third_party/llama.cpp/include
+        ${MOBILELLM_ROOT_DIR}/third_party/llama.cpp/ggml/include
     )
 endif()
 
@@ -86,7 +90,7 @@ if (MOBILELLM_BUILD_TESTS)
     target_link_libraries(mobilellm_tests PRIVATE mobilellm_static GTest::gtest GTest::gtest_main Threads::Threads)
     target_include_directories(mobilellm_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${CMAKE_SOURCE_DIR}
+        ${MOBILELLM_ROOT_DIR}
     )
     target_compile_features(mobilellm_tests PRIVATE cxx_std_20)
 
