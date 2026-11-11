@@ -8,6 +8,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 get_filename_component(MOBILELLM_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 set(MOBILELLM_ROOT_DIR "${MOBILELLM_ROOT_DIR}" CACHE PATH "MobileLLM Root" FORCE)
 
+# Enable llama.cpp baseline compute backend
+if (EXISTS "${MOBILELLM_ROOT_DIR}/third_party/llama.cpp/CMakeLists.txt")
+    set(MOBILELLM_ENABLE_LLAMACPP ON CACHE BOOL "Enable llama.cpp baseline backend" FORCE)
+    set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "Build llama.cpp examples" FORCE)
+    set(LLAMA_BUILD_TESTS OFF CACHE BOOL "Build llama.cpp tests" FORCE)
+    set(LLAMA_BUILD_SERVER OFF CACHE BOOL "Build llama.cpp server" FORCE)
+    set(GGML_OPENMP OFF CACHE BOOL "ggml: disable OpenMP on Android" FORCE)
+    add_subdirectory(${MOBILELLM_ROOT_DIR}/third_party/llama.cpp ${CMAKE_CURRENT_BINARY_DIR}/llama_build EXCLUDE_FROM_ALL)
+endif()
+
 # Build static core runtime library
 add_subdirectory(${MOBILELLM_ROOT_DIR}/runtime ${CMAKE_CURRENT_BINARY_DIR}/runtime_build)
 
@@ -27,5 +37,9 @@ target_compile_definitions(mobilellm_jni PRIVATE
 
 target_link_libraries(mobilellm_jni PRIVATE
     mobilellm_static
+    llama
+    ggml
+    ggml-cpu
+    ggml-base
     log
 )

@@ -4,6 +4,12 @@ internal object NativeBridge {
 
     init {
         try {
+            try { System.loadLibrary("c++_shared") } catch (_: UnsatisfiedLinkError) {}
+            try { System.loadLibrary("ggml-base") } catch (_: UnsatisfiedLinkError) {}
+            try { System.loadLibrary("ggml") } catch (_: UnsatisfiedLinkError) {}
+            try { System.loadLibrary("ggml-cpu") } catch (_: UnsatisfiedLinkError) {}
+            try { System.loadLibrary("llama") } catch (_: UnsatisfiedLinkError) {}
+            try { System.loadLibrary("mobilellm") } catch (_: UnsatisfiedLinkError) {}
             System.loadLibrary("mobilellm_jni")
         } catch (e: UnsatisfiedLinkError) {
             // When running in host desktop unit tests without native .so

@@ -57,8 +57,16 @@ class NexaAppInstrumentationTest {
         Log.i(TAG, "Hardware Detection: $hw")
         assertTrue(version.isNotBlank())
 
-        val modelFile = File(appContext.filesDir, "models/SmolLM2-135M-Instruct-Q4_K_M.gguf")
-        assertTrue("Model file must exist at ${modelFile.absolutePath}", modelFile.exists())
+        val modelsDir = File(appContext.filesDir, "models").apply { mkdirs() }
+        val modelFile = File(modelsDir, "SmolLM2-135M-Instruct-Q4_K_M.gguf")
+        if (!modelFile.exists() || modelFile.length() < 1000) {
+            val tmpSource = File("/data/local/tmp/SmolLM2-135M-Instruct-Q4_K_M.gguf")
+            if (tmpSource.exists() && tmpSource.length() > 1000) {
+                Log.i(TAG, "Copying model from /data/local/tmp/ into app sandbox...")
+                tmpSource.copyTo(modelFile, overwrite = true)
+            }
+        }
+        assertTrue("Model file must exist at ${modelFile.absolutePath}", modelFile.exists() && modelFile.length() > 1000)
         Log.i(TAG, "Found model file: ${modelFile.name} (${modelFile.length() / (1024 * 1024)} MB)")
 
         val modelConfig = ModelConfig(
@@ -76,7 +84,7 @@ class NexaAppInstrumentationTest {
         assertNotNull("Session must be successfully created", session)
         Log.i(TAG, "Model successfully loaded into native memory!")
 
-        val prompt = "Tell me a fun fact about mobile computers."
+        val prompt = "<|im_start|>user\nTell me a fun fact about mobile computers.<|im_end|>\n<|im_start|>assistant\n"
         val params = SamplingParams(
             temperature = 0.7f,
             maxTokens = 64

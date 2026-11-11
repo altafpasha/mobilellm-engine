@@ -5,6 +5,15 @@
 #include <chrono>
 #include <iostream>
 
+#ifdef __ANDROID__
+#include <android/log.h>
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "MobileLLMEngine", __VA_ARGS__)
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "MobileLLMEngine", __VA_ARGS__)
+#else
+#define LOGE(...)
+#define LOGI(...)
+#endif
+
 namespace mobilellm {
 
 std::unique_ptr<IEngine> create_engine() noexcept {
@@ -231,6 +240,7 @@ void EngineImpl::run_generation(
     );
 
     if (!eval_st.is_ok()) {
+        LOGE("evaluate_prompt failed: %s (code %d)", eval_st.message.c_str(), static_cast<int>(eval_st.code));
         state->is_finished.store(true);
         if (complete_cb) {
             complete_cb(eval_st, metrics);
@@ -239,6 +249,7 @@ void EngineImpl::run_generation(
     }
 
     metrics.prompt_tokens = static_cast<uint32_t>(prompt_tokens.size());
+    LOGI("evaluate_prompt succeeded with %zu tokens", prompt_tokens.size());
 
     bool first_token = true;
     uint32_t generated_count = 0;
@@ -253,12 +264,20 @@ void EngineImpl::run_generation(
         auto sample_res = backend_->sample_next_token(session_entry.backend_handle, request.sampling);
         if (!sample_res.is_ok()) {
             final_status = sample_res.status();
+            LOGE("sample_next_token failed: %s (code %d)", final_status.message.c_str(), static_cast<int>(final_status.code));
             break;
         }
 
         int32_t token_id = sample_res.value();
+        LOGI("Sampled token_id: %d (generated_count: %u)", token_id, generated_count);
         if (backend_->is_eos_token(session_entry.backend_handle, token_id)) {
-            break;
+            if (generated_count > 0) {
+                LOGI("Token %d is EOS token! Ending generation.", token_id);
+                break;
+            } else {
+                LOGI("Token %d is EOS token at step 0, continuing...", token_id);
+                continue;
+            }
         }
 
         if (first_token) {
