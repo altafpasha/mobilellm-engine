@@ -42,8 +42,8 @@ venv/
 
 # Test models & weight artifacts
 *.gguf
-models/
-test_models/
+/models/
+/test_models/
 
 # Third-party submodules internal builds
 third_party/llama.cpp/build/
