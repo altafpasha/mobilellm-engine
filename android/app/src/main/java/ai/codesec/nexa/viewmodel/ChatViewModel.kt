@@ -227,8 +227,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             var fullText = ""
             var completedMetrics: GenerationMetrics? = null
 
+            val promptForModel = if (!trimmed.startsWith("<|")) {
+                "<|im_start|>user\n$trimmed<|im_end|>\n<|im_start|>assistant\n"
+            } else {
+                trimmed
+            }
+
             session.generate(
-                prompt = trimmed,
+                prompt = promptForModel,
                 params = _uiState.value.samplingParams,
                 onMetrics = { metrics ->
                     completedMetrics = metrics

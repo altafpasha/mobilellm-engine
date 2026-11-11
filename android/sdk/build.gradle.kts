@@ -24,6 +24,8 @@ android {
                 arguments(
                     "-DANDROID_STL=c++_shared",
                     "-DMOBILELLM_BUILD_TESTS=OFF",
+                    "-DMOBILELLM_ENABLE_LLAMACPP=ON",
+                    "-DGGML_OPENMP=OFF",
                     "-DMOBILELLM_ENABLE_VULKAN=OFF"
                 )
             }

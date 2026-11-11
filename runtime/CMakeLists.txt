@@ -57,6 +57,11 @@ find_package(Threads REQUIRED)
 target_link_libraries(mobilellm PRIVATE Threads::Threads)
 target_link_libraries(mobilellm_static PRIVATE Threads::Threads)
 
+if (ANDROID)
+    target_link_libraries(mobilellm PRIVATE log)
+    target_link_libraries(mobilellm_static PRIVATE log)
+endif()
+
 # If llama.cpp is enabled, link against llama target
 if (MOBILELLM_ENABLE_LLAMACPP)
     target_compile_definitions(mobilellm PRIVATE MOBILELLM_ENABLE_LLAMACPP)

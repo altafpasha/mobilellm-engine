@@ -1,5 +1,14 @@
 #include "backends/cpu/llamacpp_backend.h"
 
+#ifdef __ANDROID__
+#include <android/log.h>
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "LlamaCppBackend", __VA_ARGS__)
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "LlamaCppBackend", __VA_ARGS__)
+#else
+#define LOGE(...)
+#define LOGI(...)
+#endif
+
 #ifdef MOBILELLM_ENABLE_LLAMACPP
 #include "llama.h"
 #include <vector>
@@ -239,6 +248,7 @@ Result<int32_t> LlamaCppBackend::sample_next_token(
 
     float* raw_logits = llama_get_logits_ith(sess->raw_ctx, -1);
     if (!raw_logits) {
+        LOGE("llama_get_logits_ith(-1) returned NULL!");
         return Status::error(StatusCode::BACKEND_EXECUTION_ERROR, "Failed to obtain logits from context");
     }
 
@@ -249,6 +259,7 @@ Result<int32_t> LlamaCppBackend::sample_next_token(
     llama_token l_tok = static_cast<llama_token>(token);
     llama_batch batch = llama_batch_get_one(&l_tok, 1);
     if (llama_decode(sess->raw_ctx, batch) != 0) {
+        LOGE("llama_decode failed for next token %d!", token);
         return Status::error(StatusCode::BACKEND_EXECUTION_ERROR, "llama_decode failed for next token");
     }
 
