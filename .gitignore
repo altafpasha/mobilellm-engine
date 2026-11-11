@@ -1,0 +1,49 @@
+# Build outputs
+build/
+build_llama/
+bin/
+lib/
+out/
+dist/
+
+# Object files & compiled binaries
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+*.a
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Android & Gradle
+.gradle/
+android/.gradle/
+android/build/
+android/app/build/
+android/sdk/build/
+local.properties
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+venv/
+.venv/
+
+# Test models & weight artifacts
+*.gguf
+models/
+test_models/
+
+# Third-party submodules internal builds
+third_party/llama.cpp/build/
