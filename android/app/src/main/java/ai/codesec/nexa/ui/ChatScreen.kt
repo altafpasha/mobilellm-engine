@@ -1,10 +1,15 @@
 package ai.codesec.nexa.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,26 +19,29 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -43,6 +51,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -65,7 +74,7 @@ import androidx.compose.ui.unit.sp
 import ai.codesec.nexa.viewmodel.ChatMessage
 import ai.codesec.nexa.viewmodel.ChatViewModel
 import ai.codesec.nexa.viewmodel.MessageSender
-import java.io.File
+import ai.codesec.nexa.viewmodel.NexaScreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,8 +86,6 @@ fun ChatScreen(viewModel: ChatViewModel) {
 
     var inputPrompt by remember { mutableStateOf("") }
     var showSettingsDialog by remember { mutableStateOf(false) }
-    var showInfoDialog by remember { mutableStateOf(false) }
-    var showModelMenu by remember { mutableStateOf(false) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -103,7 +110,9 @@ fun ChatScreen(viewModel: ChatViewModel) {
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
+                    Column(
+                        modifier = Modifier.clickable { viewModel.setScreen(NexaScreen.MODELS) }
+                    ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("NEXA", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                             Spacer(modifier = Modifier.width(8.dp))
@@ -122,57 +131,21 @@ fun ChatScreen(viewModel: ChatViewModel) {
                             }
                         }
                         Text(
-                            text = uiState.loadedModelName ?: "No GGUF loaded",
+                            text = uiState.loadedModelName ?: "Tap to load GGUF model",
                             style = MaterialTheme.typography.bodySmall,
                             color = if (uiState.isModelLoaded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 },
                 actions = {
-                    Box {
-                        IconButton(onClick = { showModelMenu = true }) {
-                            Icon(Icons.Default.Add, contentDescription = "Models")
-                        }
-                        DropdownMenu(
-                            expanded = showModelMenu,
-                            onDismissRequest = { showModelMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Import .gguf from storage...") },
-                                onClick = {
-                                    showModelMenu = false
-                                    filePickerLauncher.launch(arrayOf("*/*"))
-                                }
-                            )
-                            if (uiState.availableModels.isNotEmpty()) {
-                                androidx.compose.material3.Divider()
-                                uiState.availableModels.forEach { file ->
-                                    DropdownMenuItem(
-                                        text = { Text(file.name) },
-                                        onClick = {
-                                            showModelMenu = false
-                                            viewModel.loadModel(file)
-                                        }
-                                    )
-                                }
-                            }
-                            if (uiState.isModelLoaded) {
-                                androidx.compose.material3.Divider()
-                                DropdownMenuItem(
-                                    text = { Text("Unload Model") },
-                                    onClick = {
-                                        showModelMenu = false
-                                        viewModel.unloadModel()
-                                    }
-                                )
-                            }
-                        }
+                    IconButton(onClick = { viewModel.setScreen(NexaScreen.MODELS) }) {
+                        Icon(Icons.Default.Storage, contentDescription = "Model Manager")
+                    }
+                    IconButton(onClick = { viewModel.setScreen(NexaScreen.DASHBOARD) }) {
+                        Icon(Icons.Default.Speed, contentDescription = "Performance Dashboard")
                     }
                     IconButton(onClick = { showSettingsDialog = true }) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
-                    }
-                    IconButton(onClick = { showInfoDialog = true }) {
-                        Icon(Icons.Default.Info, contentDescription = "Diagnostics")
                     }
                     IconButton(onClick = { viewModel.clearMessages() }) {
                         Icon(Icons.Default.DeleteSweep, contentDescription = "Clear Chat")
@@ -189,6 +162,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .imePadding()
+                    .navigationBarsPadding()
                     .background(MaterialTheme.colorScheme.surface)
                     .padding(8.dp)
             ) {
@@ -265,7 +239,10 @@ fun ChatScreen(viewModel: ChatViewModel) {
             if (uiState.messages.isEmpty()) {
                 EmptyStateView(
                     isModelLoaded = uiState.isModelLoaded,
-                    onImportClick = { filePickerLauncher.launch(arrayOf("*/*")) }
+                    onImportClick = { filePickerLauncher.launch(arrayOf("*/*")) },
+                    onSuggestionClick = { prompt ->
+                        viewModel.sendMessage(prompt)
+                    }
                 )
             } else {
                 LazyColumn(
@@ -273,10 +250,21 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(uiState.messages, key = { it.id }) { message ->
-                        MessageBubble(message)
+                    items(
+                        items = uiState.messages,
+                        key = { it.id }
+                    ) { message ->
+                        val isLastAssistant = message.sender == MessageSender.ASSISTANT &&
+                            message == uiState.messages.lastOrNull { it.sender == MessageSender.ASSISTANT }
+
+                        MessageBubble(
+                            message = message,
+                            isLastAssistant = isLastAssistant,
+                            isGenerating = uiState.isGenerating,
+                            onRegenerate = { viewModel.regenerateLastResponse() }
+                        )
                     }
                 }
             }
@@ -296,20 +284,17 @@ fun ChatScreen(viewModel: ChatViewModel) {
             onDismiss = { showSettingsDialog = false }
         )
     }
-
-    if (showInfoDialog) {
-        DeviceInfoDialog(
-            engineVersion = uiState.engineVersion,
-            hardwareInfo = uiState.hardwareInfo,
-            loadedModelName = uiState.loadedModelName,
-            onDismiss = { showInfoDialog = false }
-        )
-    }
 }
 
 @Composable
-private fun MessageBubble(message: ChatMessage) {
+private fun MessageBubble(
+    message: ChatMessage,
+    isLastAssistant: Boolean,
+    isGenerating: Boolean,
+    onRegenerate: () -> Unit
+) {
     val isUser = message.sender == MessageSender.USER
+    val context = LocalContext.current
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -319,8 +304,8 @@ private fun MessageBubble(message: ChatMessage) {
             shape = RoundedCornerShape(
                 topStart = 16.dp,
                 topEnd = 16.dp,
-                bottomStart = if (isUser) 16.dp else 2.dp,
-                bottomEnd = if (isUser) 2.dp else 16.dp
+                bottomStart = if (isUser) 16.dp else 4.dp,
+                bottomEnd = if (isUser) 4.dp else 16.dp
             ),
             colors = CardDefaults.cardColors(
                 containerColor = if (isUser)
@@ -328,25 +313,87 @@ private fun MessageBubble(message: ChatMessage) {
                 else
                     MaterialTheme.colorScheme.surfaceVariant
             ),
-            modifier = Modifier.fillMaxWidth(0.85f)
+            modifier = Modifier.fillMaxWidth(0.9f)
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    text = if (isUser) "You" else "NEXA",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    color = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
-                )
+            Column(modifier = Modifier.padding(14.dp)) {
+                // Header Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (isUser) "You" else "NEXA",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+                    )
+
+                    if (!isUser && message.text.isNotBlank()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                    val clip = ClipData.newPlainText("NEXA Response", message.text)
+                                    clipboard?.setPrimaryClip(clip)
+                                    Toast.makeText(context, "Response copied", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.ContentCopy,
+                                    contentDescription = "Copy Response",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
+
+                            if (isLastAssistant && !isGenerating) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                IconButton(
+                                    onClick = onRegenerate,
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Refresh,
+                                        contentDescription = "Regenerate Response",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(4.dp))
 
-                Text(
-                    text = message.text.ifEmpty { if (message.isStreaming) "..." else "" },
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                // Content
+                if (isUser) {
+                    Text(
+                        text = message.text,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                } else {
+                    if (message.text.isNotBlank()) {
+                        MarkdownText(
+                            text = message.text,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else if (message.isStreaming) {
+                        Text(
+                            text = "Thinking...",
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                }
 
+                // Streaming animation
                 if (message.isStreaming) {
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(12.dp),
@@ -354,12 +401,17 @@ private fun MessageBubble(message: ChatMessage) {
                             color = MaterialTheme.colorScheme.secondary
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Generating tokens...", fontSize = 11.sp, color = MaterialTheme.colorScheme.secondary)
+                        Text(
+                            text = "Generating tokens...",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
                     }
                 }
 
+                // Telemetry line
                 message.metrics?.let { metrics ->
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "%.1f tok/s | TTFT: %.0fms | RSS: %.0fMB | Out: %d tok".format(
                             metrics.tokensPerSecond,
@@ -369,7 +421,7 @@ private fun MessageBubble(message: ChatMessage) {
                         ),
                         fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
                     )
                 }
             }
@@ -378,7 +430,11 @@ private fun MessageBubble(message: ChatMessage) {
 }
 
 @Composable
-private fun EmptyStateView(isModelLoaded: Boolean, onImportClick: () -> Unit) {
+private fun EmptyStateView(
+    isModelLoaded: Boolean,
+    onImportClick: () -> Unit,
+    onSuggestionClick: (String) -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -386,19 +442,39 @@ private fun EmptyStateView(isModelLoaded: Boolean, onImportClick: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("NEXA Mobile AI", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(8.dp))
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            modifier = Modifier.size(64.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    text = "N",
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("NEXA Edge AI", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = "Autonomous, 100% offline edge intelligence powered by the native MobileLLM C++20 engine.",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
+
         Spacer(modifier = Modifier.height(24.dp))
 
         if (!isModelLoaded) {
             Card(
                 onClick = onImportClick,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                shape = RoundedCornerShape(12.dp)
             ) {
                 Row(
                     modifier = Modifier.padding(16.dp),
@@ -413,8 +489,49 @@ private fun EmptyStateView(isModelLoaded: Boolean, onImportClick: () -> Unit) {
                 }
             }
         } else {
-            Text("Model loaded! Type a prompt below to begin.", color = MaterialTheme.colorScheme.primary)
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Prompt Suggestions",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                SuggestionItem(
+                    text = "Explain quantum computing in simple terms",
+                    onClick = { onSuggestionClick("Explain quantum computing in simple terms") }
+                )
+                SuggestionItem(
+                    text = "Write a Python function to sort a list",
+                    onClick = { onSuggestionClick("Write a Python function to sort a list") }
+                )
+                SuggestionItem(
+                    text = "What are the advantages of local AI on mobile devices?",
+                    onClick = { onSuggestionClick("What are the advantages of local AI on mobile devices?") }
+                )
+            }
         }
     }
 }
 
+@Composable
+private fun SuggestionItem(
+    text: String,
+    onClick: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+        )
+    }
+}

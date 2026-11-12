@@ -14,6 +14,8 @@ data class GenerationMetrics(
     val completionTokens: Int = 0,
     val timeToFirstTokenMs: Double = 0.0,
     val tokensPerSecond: Double = 0.0,
-    val peakRssMb: Double = 0.0
+    val peakRssMb: Double = 0.0,
+    val totalDurationMs: Double = 0.0,
+    val threadsUsed: Int = 4
 )
 

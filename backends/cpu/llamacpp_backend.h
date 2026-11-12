@@ -51,6 +51,7 @@ private:
         llama_model* raw_model{nullptr};
         uint32_t context_length{2048};
         uint32_t n_vocab{0};
+        uint32_t n_threads{4};
     };
 
     struct SessionContext {

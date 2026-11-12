@@ -103,5 +103,22 @@ class SdkUnitTest {
         assertThat(ex.errorCode).isEqualTo(MobileLLMException.CODE_OUT_OF_MEMORY)
         assertThat(ex.message).contains("Memory exhausted")
     }
+
+    @Test
+    fun modelMetadata_fieldsAndDefaultsPreserved() {
+        val meta = ai.codesec.mobilellm.models.ModelMetadata(
+            filepath = "/data/local/tmp/smollm.gguf",
+            architecture = "llama",
+            quantization = "Q4_K_M",
+            contextLength = 2048,
+            fileSizeBytes = 105658048L,
+            isValid = true
+        )
+        assertThat(meta.architecture).isEqualTo("llama")
+        assertThat(meta.quantization).isEqualTo("Q4_K_M")
+        assertThat(meta.contextLength).isEqualTo(2048)
+        assertThat(meta.fileSizeBytes).isEqualTo(105658048L)
+        assertThat(meta.isValid).isTrue()
+    }
 }
 

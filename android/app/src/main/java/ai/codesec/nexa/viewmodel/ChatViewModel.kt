@@ -1,7 +1,9 @@
 package ai.codesec.nexa.viewmodel
 
+import android.app.ActivityManager
 import android.app.Application
 import android.content.ContentResolver
+import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
@@ -12,6 +14,7 @@ import ai.codesec.mobilellm.ModelSession
 import ai.codesec.mobilellm.models.BackendType
 import ai.codesec.mobilellm.models.GenerationMetrics
 import ai.codesec.mobilellm.models.ModelConfig
+import ai.codesec.mobilellm.models.ModelMetadata
 import ai.codesec.mobilellm.models.SamplingParams
 import ai.codesec.mobilellm.models.SessionConfig
 import kotlinx.coroutines.Dispatchers
@@ -33,6 +36,12 @@ enum class MessageSender {
     SYSTEM
 }
 
+enum class NexaScreen {
+    CHAT,
+    MODELS,
+    DASHBOARD
+}
+
 data class ChatMessage(
     val id: String = UUID.randomUUID().toString(),
     val sender: MessageSender,
@@ -43,16 +52,26 @@ data class ChatMessage(
 )
 
 data class ChatUiState(
+    val currentScreen: NexaScreen = NexaScreen.CHAT,
     val messages: List<ChatMessage> = emptyList(),
     val isGenerating: Boolean = false,
     val isModelLoaded: Boolean = false,
     val loadedModelName: String? = null,
     val availableModels: List<File> = emptyList(),
+    val modelMetadataMap: Map<String, ModelMetadata> = emptyMap(),
     val samplingParams: SamplingParams = SamplingParams(),
     val preferredBackend: BackendType = BackendType.CPU_NEON,
     val threadCount: Int = Runtime.getRuntime().availableProcessors().coerceAtLeast(1),
     val engineVersion: String = "0.1.0-dev",
     val hardwareInfo: String = "Detecting...",
+    val lastMetrics: GenerationMetrics? = null,
+    val systemTotalRamMb: Long = 0L,
+    val systemAvailRamMb: Long = 0L,
+    val isLowMemory: Boolean = false,
+    val nativeRssMb: Double = 0.0,
+    val jvmHeapMb: Double = 0.0,
+    val freeStorageBytes: Long = 0L,
+    val modelsStorageBytes: Long = 0L,
     val errorMessage: String? = null,
     val importProgress: Float? = null
 )
@@ -72,7 +91,43 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         refreshModelsList()
+        refreshSystemStats()
         initializeEngine()
+    }
+
+    fun setScreen(screen: NexaScreen) {
+        _uiState.update { it.copy(currentScreen = screen) }
+        if (screen == NexaScreen.MODELS || screen == NexaScreen.DASHBOARD) {
+            refreshSystemStats()
+            refreshModelsList()
+        }
+    }
+
+    fun refreshSystemStats() {
+        val app = getApplication<Application>()
+        val actManager = app.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        val memInfo = ActivityManager.MemoryInfo().also { actManager?.getMemoryInfo(it) }
+
+        val totalRamMb = (memInfo.totalMem) / (1024 * 1024)
+        val availRamMb = (memInfo.availMem) / (1024 * 1024)
+        val lowMem = memInfo.lowMemory
+
+        val runtime = Runtime.getRuntime()
+        val jvmHeapMb = (runtime.totalMemory() - runtime.freeMemory()) / (1024.0 * 1024.0)
+
+        val freeSpace = modelsDir.freeSpace
+        val modelsSize = _uiState.value.availableModels.sumOf { it.length() }
+
+        _uiState.update {
+            it.copy(
+                systemTotalRamMb = totalRamMb,
+                systemAvailRamMb = availRamMb,
+                isLowMemory = lowMem,
+                jvmHeapMb = jvmHeapMb,
+                freeStorageBytes = freeSpace,
+                modelsStorageBytes = modelsSize
+            )
+        }
     }
 
     private fun initializeEngine() {
@@ -97,7 +152,48 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshModelsList() {
         val files = modelsDir.listFiles { f -> f.extension.equals("gguf", ignoreCase = true) }
             ?.toList() ?: emptyList()
-        _uiState.update { it.copy(availableModels = files) }
+        val totalBytes = files.sumOf { it.length() }
+        val freeBytes = modelsDir.freeSpace
+
+        _uiState.update {
+            it.copy(
+                availableModels = files,
+                modelsStorageBytes = totalBytes,
+                freeStorageBytes = freeBytes
+            )
+        }
+
+        // Asynchronously inspect headers for each model
+        viewModelScope.launch(Dispatchers.IO) {
+            val metaMap = _uiState.value.modelMetadataMap.toMutableMap()
+            for (file in files) {
+                if (!metaMap.containsKey(file.name)) {
+                    try {
+                        val meta = client.inspectModel(file, computeHash = false)
+                        metaMap[file.name] = meta
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Could not inspect model ${file.name}: ${e.message}")
+                    }
+                }
+            }
+            _uiState.update { it.copy(modelMetadataMap = metaMap) }
+        }
+
+        // Auto-load first available model if none is currently active
+        if (!_uiState.value.isModelLoaded && activeSession == null && files.isNotEmpty()) {
+            loadModel(files.first())
+        }
+    }
+
+    fun deleteModel(file: File) {
+        if (file.name == _uiState.value.loadedModelName) {
+            unloadModel()
+        }
+        if (file.exists()) {
+            file.delete()
+        }
+        refreshModelsList()
+        refreshSystemStats()
     }
 
     fun importModel(uri: Uri, contentResolver: ContentResolver) {
@@ -122,6 +218,20 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             output.write(buffer, 0, bytesRead)
                         }
                     }
+                }
+
+                // Verify file header validity
+                val isValidGguf = try {
+                    val meta = client.inspectModel(targetFile, computeHash = false)
+                    meta.isValid
+                } catch (e: Exception) {
+                    targetFile.delete()
+                    throw IllegalArgumentException("Invalid GGUF model: ${e.message}")
+                }
+
+                if (!isValidGguf) {
+                    targetFile.delete()
+                    throw IllegalArgumentException("File is not a valid GGUF model.")
                 }
 
                 withContext(Dispatchers.Main) {
@@ -193,6 +303,19 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun regenerateLastResponse() {
+        val messages = _uiState.value.messages
+        val lastUserIdx = messages.indexOfLast { it.sender == MessageSender.USER }
+        if (lastUserIdx == -1) return
+
+        val userPrompt = messages[lastUserIdx].text
+        // Prune messages down to before the last user message
+        val pruned = messages.subList(0, lastUserIdx)
+        _uiState.update { it.copy(messages = pruned) }
+
+        sendMessage(userPrompt)
+    }
+
     fun sendMessage(promptText: String) {
         val trimmed = promptText.trim()
         if (trimmed.isEmpty()) return
@@ -238,6 +361,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 params = _uiState.value.samplingParams,
                 onMetrics = { metrics ->
                     completedMetrics = metrics
+                    _uiState.update { it.copy(lastMetrics = metrics) }
                 }
             ).catch { e ->
                 Log.e(TAG, "Error during generation stream", e)
@@ -268,6 +392,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { state ->
                 state.copy(
                     isGenerating = false,
+                    lastMetrics = completedMetrics,
+                    nativeRssMb = completedMetrics?.peakRssMb ?: state.nativeRssMb,
                     messages = state.messages.map { msg ->
                         if (msg.id == assistantMsgId) {
                             msg.copy(
@@ -279,6 +405,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 )
             }
+            refreshSystemStats()
         }
     }
 
@@ -305,6 +432,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateThreads(threads: Int) {
         _uiState.update { it.copy(threadCount = threads) }
+        // If a model is currently loaded, reload it with the new thread count
+        val loadedName = _uiState.value.loadedModelName
+        if (loadedName != null && _uiState.value.isModelLoaded) {
+            val file = File(modelsDir, loadedName)
+            if (file.exists()) {
+                loadModel(file)
+            }
+        }
     }
 
     fun clearMessages() {
@@ -321,4 +456,3 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         activeSession?.close()
     }
 }
-

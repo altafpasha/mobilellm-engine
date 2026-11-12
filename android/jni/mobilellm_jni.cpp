@@ -247,10 +247,7 @@ Java_ai_codesec_mobilellm_NativeBridge_nativeGenerate(
                 continue_gen = (ret == JNI_TRUE);
             }
             thread_env->DeleteLocalRef(cb_class);
-
-            if (attached) {
-                g_jvm->DetachCurrentThread();
-            }
+            // Thread remains attached during token generation loop for optimal throughput
         }
         return continue_gen;
     };
@@ -296,10 +293,7 @@ Java_ai_codesec_mobilellm_NativeBridge_nativeGenerate(
                 }
                 thread_env->DeleteLocalRef(cb_class);
                 thread_env->DeleteGlobalRef(c->global_callback);
-
-                if (attached) {
-                    g_jvm->DetachCurrentThread();
-                }
+                g_jvm->DetachCurrentThread();
             }
         }
 
@@ -340,6 +334,26 @@ Java_ai_codesec_mobilellm_NativeBridge_nativeCancel(
     if (st.code != 0) {
         throw_java_exception(env, st.code, st.message);
     }
+}
+
+JNIEXPORT jstring JNICALL
+Java_ai_codesec_mobilellm_NativeBridge_nativeInspectModel(
+    JNIEnv* env,
+    jclass /*clazz*/,
+    jstring model_path
+) {
+    if (!model_path) {
+        throw_java_exception(env, 1, "model_path cannot be null");
+        return nullptr;
+    }
+    JStringGuard path_guard(env, model_path);
+    char buf[1024];
+    mllm_status_t st = mllm_model_inspect(path_guard.c_str(), buf, sizeof(buf));
+    if (st.code != 0) {
+        throw_java_exception(env, st.code, st.message);
+        return nullptr;
+    }
+    return env->NewStringUTF(buf);
 }
 
 JNIEXPORT jstring JNICALL

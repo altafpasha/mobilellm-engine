@@ -2,11 +2,15 @@ package ai.codesec.mobilellm
 
 import android.content.Context
 import ai.codesec.mobilellm.models.ModelConfig
+import ai.codesec.mobilellm.models.ModelMetadata
 import ai.codesec.mobilellm.models.SessionConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.Closeable
 import java.io.File
+import java.io.FileInputStream
+import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -116,6 +120,67 @@ class MobileLLMClient private constructor() : Closeable {
         }
 
         ModelSession(engineHandle, sessionHandle)
+    }
+
+    /**
+     * Inspects a GGUF model file headers and metadata without loading weights into memory.
+     *
+     * @param modelFile File object pointing to local .gguf file.
+     * @param computeHash When true, computes SHA-256 checksum of the file.
+     * @return [ModelMetadata] containing architecture, quantization, context size, etc.
+     */
+    suspend fun inspectModel(
+        modelFile: File,
+        computeHash: Boolean = false
+    ): ModelMetadata = withContext(Dispatchers.IO) {
+        if (!modelFile.exists()) {
+            throw MobileLLMException(
+                MobileLLMException.CODE_FILE_NOT_FOUND,
+                "Model file not found: ${modelFile.absolutePath}"
+            )
+        }
+
+        val jsonStr = try {
+            NativeBridge.nativeInspectModel(modelFile.absolutePath)
+        } catch (e: Exception) {
+            throw MobileLLMException(
+                MobileLLMException.CODE_UNSUPPORTED_FORMAT,
+                "Failed to parse GGUF headers: ${e.message}"
+            )
+        }
+
+        val obj = JSONObject(jsonStr)
+        val sha256 = if (computeHash) {
+            try {
+                val md = MessageDigest.getInstance("SHA-256")
+                FileInputStream(modelFile).use { fis ->
+                    val buffer = ByteArray(64 * 1024)
+                    var read: Int
+                    while (fis.read(buffer).also { read = it } != -1) {
+                        md.update(buffer, 0, read)
+                    }
+                }
+                md.digest().joinToString("") { "%02x".format(it) }
+            } catch (_: Exception) {
+                ""
+            }
+        } else {
+            ""
+        }
+
+        ModelMetadata(
+            filepath = modelFile.absolutePath,
+            architecture = obj.optString("architecture", "unknown"),
+            quantization = obj.optString("quantization", "unknown"),
+            contextLength = obj.optInt("context_length", 2048),
+            embeddingLength = obj.optInt("embedding_length", 0),
+            blockCount = obj.optInt("block_count", 0),
+            headCount = obj.optInt("head_count", 0),
+            tensorCount = obj.optLong("tensor_count", 0L),
+            fileSizeBytes = obj.optLong("file_size_bytes", modelFile.length()),
+            sha256 = sha256,
+            isValid = obj.optBoolean("valid", true)
+        )
     }
 
     /**
