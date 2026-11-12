@@ -46,8 +46,9 @@ class NexaAppInstrumentationTest {
     }
 
     @Test
-    fun testNativeInferenceWithDeviceModel() = runBlocking {
-        val appContext = InstrumentationRegistry.getInstrumentation().targetContext
+    fun testNativeInferenceWithDeviceModel() {
+        runBlocking {
+            val appContext = InstrumentationRegistry.getInstrumentation().targetContext
         val client = MobileLLMClient.getInstance(appContext)
         client.initialize()
 
@@ -112,6 +113,34 @@ class NexaAppInstrumentationTest {
         assertTrue("Generated response must contain tokens", chunks.isNotEmpty())
         assertTrue("Generated text must not be empty", generatedText.isNotBlank())
         session.close()
+        }
+    }
+
+    @Test
+    fun testModelHeaderInspection() {
+        runBlocking {
+            val appContext = InstrumentationRegistry.getInstrumentation().targetContext
+            val client = MobileLLMClient.getInstance(appContext)
+            client.initialize()
+
+            val modelsDir = File(appContext.filesDir, "models").apply { mkdirs() }
+            val modelFile = File(modelsDir, "SmolLM2-135M-Instruct-Q4_K_M.gguf")
+            if (!modelFile.exists()) {
+                val tmpSource = File("/data/local/tmp/SmolLM2-135M-Instruct-Q4_K_M.gguf")
+                if (tmpSource.exists()) tmpSource.copyTo(modelFile, overwrite = true)
+            }
+            assertTrue(modelFile.exists())
+
+            val meta = client.inspectModel(modelFile, computeHash = true)
+            Log.i(TAG, "Inspected Model Metadata: $meta")
+            assertEquals("llama", meta.architecture)
+            assertEquals("Q4_K_M", meta.quantization)
+            assertEquals(30, meta.blockCount)
+            assertTrue(meta.isValid)
+            assertTrue(meta.fileSizeBytes > 100_000_000L)
+            assertTrue("SHA256 must be computed", meta.sha256.isNotBlank())
+            Log.i(TAG, "Verified SHA-256: ${meta.sha256}")
+        }
     }
 }
 

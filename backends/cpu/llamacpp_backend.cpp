@@ -80,8 +80,10 @@ Result<BackendModelHandle> LlamaCppBackend::load_model(const ModelLoadConfig& co
     loaded->raw_model = raw;
     loaded->context_length = config.context_length;
     loaded->n_vocab = static_cast<uint32_t>(llama_n_vocab(raw));
+    loaded->n_threads = config.n_threads > 0 ? config.n_threads : 4;
 
     models_[handle] = loaded;
+    LOGI("Model loaded: handle=%llu, vocab=%u, threads=%u", (unsigned long long)handle, loaded->n_vocab, loaded->n_threads);
     return handle;
 }
 
@@ -123,7 +125,13 @@ Result<BackendSessionHandle> LlamaCppBackend::create_session(
 
     llama_context_params cparams = llama_context_default_params();
     cparams.n_ctx = config.max_context_tokens;
+    uint32_t threads = it->second->n_threads > 0 ? it->second->n_threads : 4;
+    cparams.n_threads = static_cast<int32_t>(threads);
+    cparams.n_threads_batch = static_cast<int32_t>(threads);
+    cparams.flash_attn = true;
     cparams.no_perf = false;
+
+    LOGI("Creating session: ctx=%u, threads=%u, flash_attn=true", config.max_context_tokens, threads);
 
     llama_context* ctx = llama_new_context_with_model(it->second->raw_model, cparams);
     if (!ctx) {

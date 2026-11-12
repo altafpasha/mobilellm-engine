@@ -25,6 +25,42 @@ enum class GGUFType : uint32_t {
     FLOAT64 = 12,
 };
 
+static std::string ftype_to_quant_str(uint32_t ftype) {
+    switch (ftype) {
+        case 0: return "F32";
+        case 1: return "F16";
+        case 2: return "Q4_0";
+        case 3: return "Q4_1";
+        case 7: return "Q8_0";
+        case 8: return "Q5_0";
+        case 9: return "Q5_1";
+        case 10: return "Q2_K";
+        case 11: return "Q3_K_S";
+        case 12: return "Q3_K_M";
+        case 13: return "Q3_K_L";
+        case 14: return "Q4_K_S";
+        case 15: return "Q4_K_M";
+        case 16: return "Q5_K_S";
+        case 17: return "Q5_K_M";
+        case 18: return "Q6_K";
+        case 19: return "IQ2_XXS";
+        case 20: return "IQ2_XS";
+        case 21: return "Q2_K_S";
+        case 22: return "IQ3_XS";
+        case 23: return "IQ3_XXS";
+        case 24: return "IQ1_S";
+        case 25: return "IQ4_NL";
+        case 26: return "IQ3_S";
+        case 27: return "IQ3_M";
+        case 28: return "IQ2_S";
+        case 29: return "IQ2_M";
+        case 30: return "IQ4_XS";
+        case 31: return "IQ1_M";
+        case 32: return "BF16";
+        default: return "TYPE_" + std::to_string(ftype);
+    }
+}
+
 static uint64_t get_file_size(const std::string& path) {
     struct stat st;
     if (stat(path.c_str(), &st) != 0) {
@@ -205,13 +241,20 @@ Result<ModelMetadata> ModelLoader::inspect_file(const std::string& filepath) noe
             uint32_t ftype = 0;
             if (val_type == GGUFType::UINT32) {
                 file.read(reinterpret_cast<char*>(&ftype), sizeof(ftype));
-                meta.quantization = "type_" + std::to_string(ftype);
+                meta.quantization = ftype_to_quant_str(ftype);
             } else {
                 skip_value(file, val_type_raw);
             }
         } else {
             if (!skip_value(file, val_type_raw)) break;
         }
+    }
+
+    if (meta.quantization == "unknown") {
+        if (filepath.find("Q4_K_M") != std::string::npos || filepath.find("q4_k_m") != std::string::npos) meta.quantization = "Q4_K_M";
+        else if (filepath.find("Q4_0") != std::string::npos || filepath.find("q4_0") != std::string::npos) meta.quantization = "Q4_0";
+        else if (filepath.find("Q8_0") != std::string::npos || filepath.find("q8_0") != std::string::npos) meta.quantization = "Q8_0";
+        else if (filepath.find("Q5_K_M") != std::string::npos || filepath.find("q5_k_m") != std::string::npos) meta.quantization = "Q5_K_M";
     }
 
     return meta;

@@ -5,6 +5,7 @@ import ai.codesec.mobilellm.models.SamplingParams
 import ai.codesec.mobilellm.models.TokenChunk
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicBoolean
@@ -38,6 +39,7 @@ class ModelSession internal constructor(
         require(prompt.isNotBlank()) { "Prompt must not be blank" }
 
         var activeGenHandle: Long = 0
+        val startTime = System.currentTimeMillis()
 
         val nativeCb = object : NativeCallback {
             override fun onToken(text: String, tokenId: Int, isSpecial: Boolean, logprob: Float): Boolean {
@@ -56,19 +58,21 @@ class ModelSession internal constructor(
                 tps: Double,
                 peakRssMb: Double
             ) {
+                val durationMs = (System.currentTimeMillis() - startTime).toDouble()
                 val metrics = GenerationMetrics(
                     promptTokens = promptTokens,
                     completionTokens = completionTokens,
                     timeToFirstTokenMs = ttftMs,
                     tokensPerSecond = tps,
-                    peakRssMb = peakRssMb
+                    peakRssMb = peakRssMb,
+                    totalDurationMs = durationMs
                 )
                 onMetrics?.invoke(metrics)
 
                 if (code == 0 || code == MobileLLMException.CODE_CANCELLED) {
-                    close()
+                    channel.close()
                 } else {
-                    close(MobileLLMException(code, message))
+                    channel.close(MobileLLMException(code, message))
                 }
             }
         }
@@ -91,7 +95,7 @@ class ModelSession internal constructor(
                 NativeBridge.nativeCancel(engineHandle, activeGenHandle)
             }
         }
-    }
+    }.buffer(kotlinx.coroutines.channels.Channel.UNLIMITED)
 
     override fun close() {
         if (isClosed.compareAndSet(false, true)) {

@@ -98,6 +98,7 @@ MOBILELLM_EXPORT mllm_status_t mllm_engine_destroy(mllm_engine_t engine);
 // Model Management
 MOBILELLM_EXPORT mllm_status_t mllm_model_load(mllm_engine_t engine, const mllm_model_config_t* config, mllm_model_t* out_model);
 MOBILELLM_EXPORT mllm_status_t mllm_model_unload(mllm_engine_t engine, mllm_model_t model);
+MOBILELLM_EXPORT mllm_status_t mllm_model_inspect(const char* model_path, char* json_buffer, size_t max_len);
 
 // Session Management
 MOBILELLM_EXPORT mllm_status_t mllm_session_create(mllm_engine_t engine, mllm_model_t model, const mllm_session_config_t* config, mllm_session_t* out_session);

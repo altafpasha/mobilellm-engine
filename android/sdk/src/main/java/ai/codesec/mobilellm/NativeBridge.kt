@@ -70,5 +70,8 @@ internal object NativeBridge {
 
     @JvmStatic
     external fun nativeDetectHardware(): String
+
+    @JvmStatic
+    external fun nativeInspectModel(modelPath: String): String
 }
 

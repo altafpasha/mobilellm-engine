@@ -1,5 +1,6 @@
 #include "mobilellm/c_api.h"
 #include "mobilellm/engine.h"
+#include "mobilellm/model_loader.h"
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -106,6 +107,36 @@ mllm_status_t mllm_model_unload(mllm_engine_t engine_id, mllm_model_t model) {
         return c_error(static_cast<int32_t>(mobilellm::StatusCode::INVALID_ARGUMENT), "Invalid engine handle");
     }
     return to_c_status(engine->unload_model(model));
+}
+
+mllm_status_t mllm_model_inspect(const char* model_path, char* json_buffer, size_t max_len) {
+    if (!model_path || !json_buffer || max_len == 0) {
+        return c_error(static_cast<int32_t>(mobilellm::StatusCode::INVALID_ARGUMENT), "Invalid null arguments");
+    }
+
+    auto res = mobilellm::ModelLoader::inspect_file(model_path);
+    if (!res.is_ok()) {
+        return to_c_status(res.status());
+    }
+
+    const auto& m = res.value();
+    std::ostringstream ss;
+    ss << "{"
+       << "\"architecture\":\"" << m.architecture << "\","
+       << "\"quantization\":\"" << m.quantization << "\","
+       << "\"context_length\":" << m.context_length << ","
+       << "\"embedding_length\":" << m.embedding_length << ","
+       << "\"block_count\":" << m.block_count << ","
+       << "\"head_count\":" << m.head_count << ","
+       << "\"tensor_count\":" << m.tensor_count << ","
+       << "\"file_size_bytes\":" << m.file_size_bytes << ","
+       << "\"valid\":true"
+       << "}";
+
+    std::string json = ss.str();
+    strncpy(json_buffer, json.c_str(), max_len - 1);
+    json_buffer[max_len - 1] = '\0';
+    return c_error(0, "");
 }
 
 mllm_status_t mllm_session_create(
