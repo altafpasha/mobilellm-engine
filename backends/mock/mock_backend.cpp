@@ -5,7 +5,7 @@ namespace mobilellm {
 
 constexpr int32_t MOCK_EOS_TOKEN = 9999;
 
-MockBackend::MockBackend() : sampler_(12345) {}
+MockBackend::MockBackend() = default;
 
 Status MockBackend::initialize(const BackendConfig& /*config*/) noexcept {
     return Status::ok();
@@ -50,6 +50,10 @@ Result<BackendSessionHandle> MockBackend::create_session(
     BackendModelHandle model,
     const SessionConfig& /*config*/
 ) noexcept {
+    if (simulate_oom_) {
+        return Status::error(StatusCode::OUT_OF_MEMORY, "Simulated memory allocation failure in session creation");
+    }
+
     std::lock_guard<std::mutex> lock(mutex_);
     if (models_.find(model) == models_.end()) {
         return Status::error(StatusCode::MODEL_NOT_LOADED, "Cannot create session for unloaded model");
@@ -60,6 +64,7 @@ Result<BackendSessionHandle> MockBackend::create_session(
     session.handle = session_id;
     session.model = model;
     session.step = 0;
+    session.sampler = std::make_unique<Sampler>(42 + static_cast<uint64_t>(session_id));
     sessions_[session_id] = std::move(session);
     return session_id;
 }
@@ -80,6 +85,10 @@ Status MockBackend::evaluate_prompt(
     std::vector<int32_t>& out_tokens
 ) noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
+    if (simulate_eval_failure_) {
+        return Status::error(StatusCode::BACKEND_EXECUTION_ERROR, "Simulated prompt evaluation error");
+    }
+
     auto it = sessions_.find(session);
     if (it == sessions_.end()) {
         return Status::error(StatusCode::SESSION_NOT_FOUND, "Session not found for prompt evaluation");
@@ -129,7 +138,7 @@ Result<int32_t> MockBackend::sample_next_token(
         logits[256] = 10.0f; // EOS
     }
 
-    int32_t chosen = sampler_.sample(logits, s.generated_tokens, params);
+    int32_t chosen = s.sampler ? s.sampler->sample(logits, s.generated_tokens, params) : 0;
     if (chosen == 256) {
         chosen = MOCK_EOS_TOKEN;
     }

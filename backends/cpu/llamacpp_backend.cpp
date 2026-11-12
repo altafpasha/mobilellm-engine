@@ -16,7 +16,7 @@
 
 namespace mobilellm {
 
-LlamaCppBackend::LlamaCppBackend() : sampler_(42) {}
+LlamaCppBackend::LlamaCppBackend() = default;
 
 LlamaCppBackend::~LlamaCppBackend() {
     shutdown();
@@ -143,22 +143,31 @@ Result<BackendSessionHandle> LlamaCppBackend::create_session(
     sess->handle = s_handle;
     sess->model_handle = model;
     sess->raw_ctx = ctx;
+    sess->sampler = std::make_unique<Sampler>(42 + static_cast<uint64_t>(s_handle));
 
     sessions_[s_handle] = sess;
     return s_handle;
 }
 
 Status LlamaCppBackend::destroy_session(BackendSessionHandle session) noexcept {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = sessions_.find(session);
-    if (it == sessions_.end()) {
-        return Status::error(StatusCode::SESSION_NOT_FOUND, "Session handle not found");
+    std::shared_ptr<SessionContext> sess;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = sessions_.find(session);
+        if (it == sessions_.end()) {
+            return Status::error(StatusCode::SESSION_NOT_FOUND, "Session handle not found");
+        }
+        sess = it->second;
+        sessions_.erase(it);
     }
 
-    if (it->second->raw_ctx) {
-        llama_free(it->second->raw_ctx);
+    if (sess) {
+        std::lock_guard<std::mutex> s_lock(sess->session_mutex);
+        if (sess->raw_ctx) {
+            llama_free(sess->raw_ctx);
+            sess->raw_ctx = nullptr;
+        }
     }
-    sessions_.erase(it);
     return Status::ok();
 }
 
@@ -220,7 +229,8 @@ Status LlamaCppBackend::evaluate_prompt(
     }
     tokens.resize(n_tokens);
 
-    // Evaluate prompt via llama_decode
+    // Evaluate prompt via llama_decode under per-session lock
+    std::lock_guard<std::mutex> s_lock(sess->session_mutex);
     llama_batch batch = llama_batch_get_one(tokens.data(), n_tokens);
     if (llama_decode(sess->raw_ctx, batch) != 0) {
         return Status::error(StatusCode::BACKEND_EXECUTION_ERROR, "llama_decode failed on prompt");
@@ -254,6 +264,8 @@ Result<int32_t> LlamaCppBackend::sample_next_token(
         mdl = m_it->second;
     }
 
+    std::lock_guard<std::mutex> s_lock(sess->session_mutex);
+
     float* raw_logits = llama_get_logits_ith(sess->raw_ctx, -1);
     if (!raw_logits) {
         LOGE("llama_get_logits_ith(-1) returned NULL!");
@@ -261,7 +273,8 @@ Result<int32_t> LlamaCppBackend::sample_next_token(
     }
 
     std::vector<float> logits(raw_logits, raw_logits + mdl->n_vocab);
-    int32_t token = sampler_.sample(logits, sess->history_tokens, params);
+    int32_t token = sess->sampler ? sess->sampler->sample(logits, sess->history_tokens, params)
+                                  : 0;
 
     // Step forward by decoding the sampled token
     llama_token l_tok = static_cast<llama_token>(token);
@@ -327,7 +340,7 @@ bool LlamaCppBackend::is_eos_token(BackendSessionHandle session, int32_t token_i
 // Stubs when llama.cpp is not linked
 namespace mobilellm {
 
-LlamaCppBackend::LlamaCppBackend() : sampler_(42) {}
+LlamaCppBackend::LlamaCppBackend() = default;
 LlamaCppBackend::~LlamaCppBackend() = default;
 
 Status LlamaCppBackend::initialize(const BackendConfig&) noexcept {

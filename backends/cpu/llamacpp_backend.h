@@ -55,11 +55,13 @@ private:
     };
 
     struct SessionContext {
-        BackendSessionHandle handle;
-        BackendModelHandle model_handle;
+        BackendSessionHandle handle{0};
+        BackendModelHandle model_handle{0};
         llama_context* raw_ctx{nullptr};
         std::vector<int32_t> history_tokens;
         int32_t last_n_tokens{0};
+        std::unique_ptr<Sampler> sampler;
+        mutable std::mutex session_mutex;
     };
 
     mutable std::mutex mutex_;
@@ -69,7 +71,6 @@ private:
     std::unordered_map<BackendModelHandle, std::shared_ptr<LoadedModel>> models_;
     std::unordered_map<BackendSessionHandle, std::shared_ptr<SessionContext>> sessions_;
 
-    Sampler sampler_;
     [[maybe_unused]] bool initialized_{false};
 };
 

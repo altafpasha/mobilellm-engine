@@ -36,6 +36,13 @@ Status RequestQueue::enqueue(std::shared_ptr<QueuedRequest> request) noexcept {
 }
 
 std::shared_ptr<QueuedRequest> RequestQueue::dequeue(bool wait_for_data) noexcept {
+    return dequeue(nullptr, wait_for_data);
+}
+
+std::shared_ptr<QueuedRequest> RequestQueue::dequeue(
+    const std::function<bool(SessionHandle)>& can_admit_session,
+    bool wait_for_data
+) noexcept {
     std::unique_lock<std::mutex> lock(mutex_);
 
     auto has_items = [this]() {
@@ -50,31 +57,50 @@ std::shared_ptr<QueuedRequest> RequestQueue::dequeue(bool wait_for_data) noexcep
         return nullptr;
     }
 
-    // Helper to pull from a sub-queue while discarding cancelled items
-    auto pull_from = [](std::deque<std::shared_ptr<QueuedRequest>>& q) -> std::shared_ptr<QueuedRequest> {
-        while (!q.empty()) {
-            auto item = q.front();
-            q.pop_front();
-            if (item && !item->is_cancelled.load(std::memory_order_relaxed)) {
-                return item;
-            } else if (item && item->complete_cb) {
-                // Notify cancelled item
-                item->complete_cb(Status::error(StatusCode::CANCELLED, "Request cancelled in queue"), item->metrics);
+    std::vector<std::shared_ptr<QueuedRequest>> cancelled_items;
+
+    // Helper to pull from a sub-queue while discarding cancelled items and respecting session predicate
+    auto pull_from = [&](std::deque<std::shared_ptr<QueuedRequest>>& q) -> std::shared_ptr<QueuedRequest> {
+        for (auto it = q.begin(); it != q.end(); ) {
+            auto item = *it;
+            if (!item) {
+                it = q.erase(it);
+                continue;
             }
+            if (item->is_cancelled.load(std::memory_order_relaxed)) {
+                cancelled_items.push_back(item);
+                it = q.erase(it);
+                continue;
+            }
+            if (!can_admit_session || can_admit_session(item->session_handle)) {
+                it = q.erase(it);
+                return item;
+            }
+            ++it;
         }
         return nullptr;
     };
 
     // 1. Interactive priority
     auto req = pull_from(interactive_queue_);
-    if (req) return req;
+    if (!req) {
+        // 2. Normal priority
+        req = pull_from(normal_queue_);
+    }
+    if (!req) {
+        // 3. Background priority
+        req = pull_from(background_queue_);
+    }
 
-    // 2. Normal priority
-    req = pull_from(normal_queue_);
-    if (req) return req;
+    // Release lock before invoking any application callbacks
+    lock.unlock();
 
-    // 3. Background priority
-    req = pull_from(background_queue_);
+    for (auto& item : cancelled_items) {
+        if (item->complete_cb) {
+            item->complete_cb(Status::error(StatusCode::CANCELLED, "Request cancelled in queue"), item->metrics);
+        }
+    }
+
     return req;
 }
 

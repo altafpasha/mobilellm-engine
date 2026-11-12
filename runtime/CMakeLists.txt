@@ -25,6 +25,7 @@ target_include_directories(mobilellm
     PRIVATE
         ${MOBILELLM_ROOT_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${MOBILELLM_ROOT_DIR}/scheduler/include
 )
 
 target_compile_features(mobilellm PUBLIC cxx_std_20)
@@ -44,6 +45,7 @@ add_library(mobilellm_static STATIC ${MOBILELLM_RUNTIME_SOURCES})
 target_include_directories(mobilellm_static
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${MOBILELLM_ROOT_DIR}/scheduler/include>
         $<INSTALL_INTERFACE:include>
     PRIVATE
         ${MOBILELLM_ROOT_DIR}
@@ -52,10 +54,10 @@ target_include_directories(mobilellm_static
 
 target_compile_features(mobilellm_static PUBLIC cxx_std_20)
 
-# Link threads
+# Link threads & scheduler
 find_package(Threads REQUIRED)
-target_link_libraries(mobilellm PRIVATE Threads::Threads)
-target_link_libraries(mobilellm_static PRIVATE Threads::Threads)
+target_link_libraries(mobilellm PRIVATE mobilellm_scheduler Threads::Threads)
+target_link_libraries(mobilellm_static PUBLIC mobilellm_scheduler Threads::Threads)
 
 if (ANDROID)
     target_link_libraries(mobilellm PRIVATE log)
@@ -89,6 +91,8 @@ if (MOBILELLM_BUILD_TESTS)
         tests/test_backend.cpp
         tests/test_engine.cpp
         tests/test_c_api.cpp
+        tests/test_scheduler_integration.cpp
+        tests/test_milestone2_execution.cpp
     )
 
     add_executable(mobilellm_tests ${MOBILELLM_TEST_SOURCES})

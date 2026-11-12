@@ -43,6 +43,7 @@ public:
     // Test control hooks
     void set_simulate_load_failure(bool fail) { simulate_load_failure_ = fail; }
     void set_simulate_oom(bool oom) { simulate_oom_ = oom; }
+    void set_simulate_eval_failure(bool fail) { simulate_eval_failure_ = fail; }
 
 private:
     struct MockModel {
@@ -57,6 +58,7 @@ private:
         std::vector<int32_t> prompt_tokens;
         std::vector<int32_t> generated_tokens;
         uint32_t step{0};
+        std::unique_ptr<Sampler> sampler;
     };
 
     std::mutex mutex_;
@@ -65,9 +67,9 @@ private:
     std::unordered_map<BackendModelHandle, MockModel> models_;
     std::unordered_map<BackendSessionHandle, MockSession> sessions_;
 
-    Sampler sampler_;
     bool simulate_load_failure_{false};
     bool simulate_oom_{false};
+    bool simulate_eval_failure_{false};
 };
 
 } // namespace mobilellm

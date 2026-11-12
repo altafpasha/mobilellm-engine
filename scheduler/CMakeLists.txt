@@ -1,5 +1,9 @@
 # scheduler/CMakeLists.txt
 
+if (NOT DEFINED MOBILELLM_ROOT_DIR)
+    set(MOBILELLM_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/..")
+endif()
+
 set(MOBILELLM_SCHEDULER_SOURCES
     src/memory_manager/memory_manager.cpp
     src/kv_cache/kv_cache_manager.cpp
@@ -8,15 +12,17 @@ set(MOBILELLM_SCHEDULER_SOURCES
     src/scheduler.cpp
 )
 
+find_package(Threads REQUIRED)
+
 add_library(mobilellm_scheduler STATIC ${MOBILELLM_SCHEDULER_SOURCES})
 
 target_include_directories(mobilellm_scheduler
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/runtime/include>
+        $<BUILD_INTERFACE:${MOBILELLM_ROOT_DIR}/runtime/include>
         $<INSTALL_INTERFACE:include>
     PRIVATE
-        ${CMAKE_SOURCE_DIR}
+        ${MOBILELLM_ROOT_DIR}
 )
 
 target_compile_features(mobilellm_scheduler PUBLIC cxx_std_20)
@@ -47,8 +53,8 @@ if (MOBILELLM_BUILD_TESTS)
 
     target_include_directories(mobilellm_scheduler_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${CMAKE_SOURCE_DIR}/runtime/include
-        ${CMAKE_SOURCE_DIR}
+        ${MOBILELLM_ROOT_DIR}/runtime/include
+        ${MOBILELLM_ROOT_DIR}
     )
 
     target_compile_features(mobilellm_scheduler_tests PRIVATE cxx_std_20)

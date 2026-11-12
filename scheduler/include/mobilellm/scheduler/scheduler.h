@@ -17,8 +17,10 @@ struct SchedulerConfig {
     uint32_t max_concurrent_requests{1}; // Mobile default: 1 on CPU to avoid core thrashing
     uint32_t max_batch_size{4};          // Supported when backend supports continuous batching
     uint32_t total_kv_blocks{512};       // 512 blocks * 16 tokens = 8,192 tokens capacity
-    size_t bytes_per_kv_block{64 * 1024};// 64 KB per block
+    size_t bytes_per_kv_block{0};        // Virtual block tracking: 0 bytes dummy buffer (actual KV in llama.cpp)
     uint64_t memory_safety_margin_bytes{DEFAULT_SAFETY_MARGIN_BYTES};
+    uint32_t prefill_chunk_size{256};    // Configurable chunked prefill chunk size for long prompts
+    uint32_t max_history_tokens{2048};   // Default history retention tokens for preempted sessions
 };
 
 /**
@@ -29,6 +31,11 @@ class ContinuousBatchScheduler {
 public:
     ContinuousBatchScheduler(
         std::shared_ptr<IBackend> backend,
+        const SchedulerConfig& config = SchedulerConfig{}
+    );
+    ContinuousBatchScheduler(
+        std::shared_ptr<IBackend> backend,
+        std::shared_ptr<MemoryBudgetManager> memory_mgr,
         const SchedulerConfig& config = SchedulerConfig{}
     );
     ~ContinuousBatchScheduler();

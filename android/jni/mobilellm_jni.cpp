@@ -46,6 +46,26 @@ void throw_java_exception(JNIEnv* env, int32_t code, const char* message) {
 
 struct JavaCallbackContext {
     jobject global_callback{nullptr};
+
+    ~JavaCallbackContext() {
+        if (global_callback && g_jvm) {
+            JNIEnv* env = nullptr;
+            bool attached = false;
+            jint res = g_jvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+            if (res == JNI_EDETACHED) {
+                if (g_jvm->AttachCurrentThread(&env, nullptr) == JNI_OK) {
+                    attached = true;
+                }
+            }
+            if (env) {
+                env->DeleteGlobalRef(global_callback);
+                global_callback = nullptr;
+            }
+            if (attached) {
+                g_jvm->DetachCurrentThread();
+            }
+        }
+    }
 };
 
 } // namespace
@@ -209,8 +229,10 @@ Java_ai_codesec_mobilellm_NativeBridge_nativeGenerate(
     sparams.repetition_penalty = rep_penalty;
     sparams.max_tokens = max_tokens > 0 ? max_tokens : 512;
 
-    auto* ctx = new JavaCallbackContext();
-    ctx->global_callback = callback ? env->NewGlobalRef(callback) : nullptr;
+    auto ctx = std::make_unique<JavaCallbackContext>();
+    if (callback) {
+        ctx->global_callback = env->NewGlobalRef(callback);
+    }
 
     auto token_fn = [](const mllm_token_chunk_t* chunk, void* user_data) -> bool {
         auto* c = static_cast<JavaCallbackContext*>(user_data);
@@ -220,42 +242,50 @@ Java_ai_codesec_mobilellm_NativeBridge_nativeGenerate(
         bool attached = false;
         jint res = g_jvm->GetEnv(reinterpret_cast<void**>(&thread_env), JNI_VERSION_1_6);
         if (res == JNI_EDETACHED) {
-            g_jvm->AttachCurrentThread(&thread_env, nullptr);
-            attached = true;
+            if (g_jvm->AttachCurrentThread(&thread_env, nullptr) == JNI_OK) {
+                attached = true;
+            }
         }
 
         bool continue_gen = true;
         if (thread_env) {
             jclass cb_class = thread_env->GetObjectClass(c->global_callback);
-            jmethodID mid = thread_env->GetMethodID(
-                cb_class,
-                "onToken",
-                "(Ljava/lang/String;IZF)Z"
-            );
-
-            if (mid) {
-                jstring jtext = thread_env->NewStringUTF(chunk->text ? chunk->text : "");
-                jboolean ret = thread_env->CallBooleanMethod(
-                    c->global_callback,
-                    mid,
-                    jtext,
-                    chunk->token_id,
-                    chunk->is_special,
-                    chunk->logprob
+            if (cb_class) {
+                jmethodID mid = thread_env->GetMethodID(
+                    cb_class,
+                    "onToken",
+                    "(Ljava/lang/String;IZF)Z"
                 );
-                thread_env->DeleteLocalRef(jtext);
-                continue_gen = (ret == JNI_TRUE);
+
+                if (mid) {
+                    jstring jtext = thread_env->NewStringUTF((chunk && chunk->text) ? chunk->text : "");
+                    jboolean ret = thread_env->CallBooleanMethod(
+                        c->global_callback,
+                        mid,
+                        jtext,
+                        chunk ? chunk->token_id : 0,
+                        chunk ? chunk->is_special : false,
+                        chunk ? chunk->logprob : 0.0f
+                    );
+                    if (thread_env->ExceptionCheck()) {
+                        thread_env->ExceptionClear();
+                        continue_gen = false;
+                    } else {
+                        continue_gen = (ret == JNI_TRUE);
+                    }
+                    if (jtext) {
+                        thread_env->DeleteLocalRef(jtext);
+                    }
+                }
+                thread_env->DeleteLocalRef(cb_class);
             }
-            thread_env->DeleteLocalRef(cb_class);
-            // Thread remains attached during token generation loop for optimal throughput
         }
         return continue_gen;
     };
 
     auto complete_fn = [](mllm_status_t status, const mllm_metrics_t* metrics, void* user_data) {
-        auto* c = static_cast<JavaCallbackContext*>(user_data);
+        std::unique_ptr<JavaCallbackContext> c(static_cast<JavaCallbackContext*>(user_data));
         if (!c || !g_jvm) {
-            delete c;
             return;
         }
 
@@ -264,40 +294,50 @@ Java_ai_codesec_mobilellm_NativeBridge_nativeGenerate(
             bool attached = false;
             jint res = g_jvm->GetEnv(reinterpret_cast<void**>(&thread_env), JNI_VERSION_1_6);
             if (res == JNI_EDETACHED) {
-                g_jvm->AttachCurrentThread(&thread_env, nullptr);
-                attached = true;
+                if (g_jvm->AttachCurrentThread(&thread_env, nullptr) == JNI_OK) {
+                    attached = true;
+                }
             }
 
             if (thread_env) {
                 jclass cb_class = thread_env->GetObjectClass(c->global_callback);
-                jmethodID mid = thread_env->GetMethodID(
-                    cb_class,
-                    "onComplete",
-                    "(ILjava/lang/String;IIDDD)V"
-                );
-
-                if (mid) {
-                    jstring jmsg = thread_env->NewStringUTF(status.message ? status.message : "");
-                    thread_env->CallVoidMethod(
-                        c->global_callback,
-                        mid,
-                        status.code,
-                        jmsg,
-                        metrics ? metrics->prompt_tokens : 0,
-                        metrics ? metrics->completion_tokens : 0,
-                        metrics ? metrics->ttft_ms : 0.0,
-                        metrics ? metrics->tps : 0.0,
-                        metrics ? metrics->peak_rss_mb : 0.0
+                if (cb_class) {
+                    jmethodID mid = thread_env->GetMethodID(
+                        cb_class,
+                        "onComplete",
+                        "(ILjava/lang/String;IIDDD)V"
                     );
-                    thread_env->DeleteLocalRef(jmsg);
+
+                    if (mid) {
+                        jstring jmsg = thread_env->NewStringUTF(status.message ? status.message : "");
+                        thread_env->CallVoidMethod(
+                            c->global_callback,
+                            mid,
+                            status.code,
+                            jmsg,
+                            metrics ? metrics->prompt_tokens : 0,
+                            metrics ? metrics->completion_tokens : 0,
+                            metrics ? metrics->ttft_ms : 0.0,
+                            metrics ? metrics->tps : 0.0,
+                            metrics ? metrics->peak_rss_mb : 0.0
+                        );
+                        if (thread_env->ExceptionCheck()) {
+                            thread_env->ExceptionClear();
+                        }
+                        if (jmsg) {
+                            thread_env->DeleteLocalRef(jmsg);
+                        }
+                    }
+                    thread_env->DeleteLocalRef(cb_class);
                 }
-                thread_env->DeleteLocalRef(cb_class);
                 thread_env->DeleteGlobalRef(c->global_callback);
+                c->global_callback = nullptr;
+            }
+
+            if (attached) {
                 g_jvm->DetachCurrentThread();
             }
         }
-
-        delete c;
     };
 
     mllm_gen_handle_t handle = 0;
@@ -308,15 +348,18 @@ Java_ai_codesec_mobilellm_NativeBridge_nativeGenerate(
         &sparams,
         token_fn,
         complete_fn,
-        ctx,
+        ctx.get(),
         &handle
     );
 
     if (st.code != 0) {
+        // ctx is safely destroyed by std::unique_ptr, freeing global_callback and memory
         throw_java_exception(env, st.code, st.message);
         return 0;
     }
 
+    // Hand over ownership to complete_fn
+    ctx.release();
     return static_cast<jlong>(handle);
 }
 

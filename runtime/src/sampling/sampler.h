@@ -10,6 +10,8 @@ class Sampler {
 public:
     explicit Sampler(uint64_t seed = 42);
 
+    void set_seed(uint64_t seed) { rng_.seed(seed); }
+
     /**
      * @brief Samples a single token id from raw logits according to SamplingParams.
      */

@@ -13,18 +13,52 @@ std::mutex g_engine_mutex;
 std::unordered_map<mllm_engine_t, std::unique_ptr<mobilellm::IEngine>> g_engines;
 uint64_t g_next_engine_id = 1;
 
-mllm_status_t to_c_status(const mobilellm::Status& st) {
+// Thread-local error message storage ensuring valid pointer lifetime
+// across C-ABI boundaries without heap leaking or cross-thread data races.
+thread_local std::string tls_last_error_message;
+
+const char* default_status_message(int32_t code) {
+    switch (static_cast<mobilellm::StatusCode>(code)) {
+        case mobilellm::StatusCode::OK: return "";
+        case mobilellm::StatusCode::INVALID_ARGUMENT: return "Invalid argument";
+        case mobilellm::StatusCode::FILE_NOT_FOUND: return "File not found";
+        case mobilellm::StatusCode::UNSUPPORTED_FORMAT: return "Unsupported model format";
+        case mobilellm::StatusCode::OUT_OF_MEMORY: return "Out of memory";
+        case mobilellm::StatusCode::BACKEND_INITIALIZATION_FAILED: return "Backend initialization failed";
+        case mobilellm::StatusCode::BACKEND_EXECUTION_ERROR: return "Backend execution error";
+        case mobilellm::StatusCode::SESSION_NOT_FOUND: return "Session not found";
+        case mobilellm::StatusCode::MODEL_NOT_LOADED: return "Model not loaded";
+        case mobilellm::StatusCode::CANCELLED: return "Operation cancelled";
+        case mobilellm::StatusCode::CONTEXT_EXCEEDED: return "Context window exceeded";
+        case mobilellm::StatusCode::TIMEOUT: return "Operation timed out";
+        case mobilellm::StatusCode::NOT_IMPLEMENTED: return "Not implemented";
+        case mobilellm::StatusCode::INTERNAL_ERROR: return "Internal error";
+        default: return "Unknown status code";
+    }
+}
+
+mllm_status_t make_c_status(int32_t code, const std::string& msg) {
     mllm_status_t c_st;
-    c_st.code = static_cast<int32_t>(st.code);
-    c_st.message = st.message.c_str();
+    c_st.code = code;
+    if (code == 0) {
+        c_st.message = "";
+    } else {
+        if (!msg.empty()) {
+            tls_last_error_message = msg;
+            c_st.message = tls_last_error_message.c_str();
+        } else {
+            c_st.message = default_status_message(code);
+        }
+    }
     return c_st;
 }
 
+mllm_status_t to_c_status(const mobilellm::Status& st) {
+    return make_c_status(static_cast<int32_t>(st.code), st.message);
+}
+
 mllm_status_t c_error(int32_t code, const char* msg) {
-    mllm_status_t c_st;
-    c_st.code = code;
-    c_st.message = msg;
-    return c_st;
+    return make_c_status(code, msg ? std::string(msg) : std::string());
 }
 
 mobilellm::IEngine* get_engine(mllm_engine_t id) {
@@ -266,6 +300,10 @@ mllm_status_t mllm_detect_hardware(char* json_buffer, size_t max_len) {
     strncpy(json_buffer, info, max_len - 1);
     json_buffer[max_len - 1] = '\0';
     return c_error(0, "");
+}
+
+const char* mllm_get_last_error(void) {
+    return tls_last_error_message.c_str();
 }
 
 } // extern "C"

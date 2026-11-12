@@ -51,11 +51,11 @@ endif()
 
 find_package(Threads REQUIRED)
 
-# Core Runtime Subdirectory
-add_subdirectory(runtime)
-
 # Memory & Scheduler Subdirectory
 add_subdirectory(scheduler)
+
+# Core Runtime Subdirectory
+add_subdirectory(runtime)
 
 # Developer Tools
 if (MOBILELLM_BUILD_TOOLS)

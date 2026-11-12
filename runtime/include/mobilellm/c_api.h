@@ -27,6 +27,16 @@ typedef uint64_t mllm_gen_handle_t;
 
 /**
  * @brief C-compatible status structure.
+ *
+ * Error Message Ownership & Lifetime Contract:
+ * - When code == 0 (success), message points to a static empty string ("").
+ * - When code != 0 (error), message points to a null-terminated UTF-8 string describing
+ *   the failure. The memory referenced by message is thread-local and remains valid on
+ *   the calling thread until the next MobileLLM C-API invocation on that same thread.
+ * - Callers requiring error message retention across subsequent MobileLLM API calls
+ *   or across thread boundaries must copy the string (e.g. strdup() or equivalent).
+ * - Concurrent calls from distinct threads access independent thread-local storage
+ *   and do not overwrite each other's error messages.
  */
 typedef struct {
     int32_t code;
@@ -121,6 +131,7 @@ MOBILELLM_EXPORT mllm_status_t mllm_cancel(mllm_engine_t engine, mllm_gen_handle
 // Hardware Detection & System Telemetry
 MOBILELLM_EXPORT mllm_status_t mllm_get_version(char* buffer, size_t max_len);
 MOBILELLM_EXPORT mllm_status_t mllm_detect_hardware(char* json_buffer, size_t max_len);
+MOBILELLM_EXPORT const char* mllm_get_last_error(void);
 
 #ifdef __cplusplus
 }

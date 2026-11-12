@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mobilellm/types.h"
+#include "backends/common/backend.h"
 #include <cstdint>
 #include <string>
 #include <memory>
@@ -20,14 +21,27 @@ enum class RequestPriority : uint32_t {
 struct QueuedRequest {
     GenerationHandle request_id{0};
     SessionHandle session_handle{0};
+    BackendSessionHandle backend_session_handle{0};
     std::string prompt;
     SamplingParams sampling;
     RequestPriority priority{RequestPriority::NORMAL};
     TokenCallback token_cb;
     CompletionCallback complete_cb;
+    
     uint64_t enqueue_time_us{0};
+    uint64_t dequeue_time_us{0};
+    uint64_t prefill_start_us{0};
+    uint64_t prefill_end_us{0};
+    uint64_t decode_start_us{0};
+    uint64_t decode_end_us{0};
+
+    double queue_wait_time_ms{0.0};
+    double prefill_time_ms{0.0};
+    double decode_time_ms{0.0};
+
     std::atomic<bool> is_cancelled{false};
     uint32_t generated_tokens{0};
+    bool first_token_emitted{false};
     GenerationMetrics metrics;
 };
 
@@ -49,6 +63,15 @@ public:
      * Blocks if wait_for_data is true and queue is empty.
      */
     std::shared_ptr<QueuedRequest> dequeue(bool wait_for_data = false) noexcept;
+
+    /**
+     * @brief Pops the next highest priority, fair-selected request matching the admission predicate.
+     * Blocks if wait_for_data is true and queue is empty.
+     */
+    std::shared_ptr<QueuedRequest> dequeue(
+        const std::function<bool(SessionHandle)>& can_admit_session,
+        bool wait_for_data = false
+    ) noexcept;
 
     /**
      * @brief Cancels a pending or active request by handle.

@@ -3,6 +3,10 @@ Direct C-ABI FFI wrapper linking libmobilellm dynamic library using ctypes.
 """
 
 import ctypes
+import os
+import queue
+import threading
+from collections.abc import Callable, Generator
 from ctypes import (
     POINTER,
     Structure,
@@ -16,14 +20,10 @@ from ctypes import (
     c_uint64,
     c_void_p,
 )
-import os
 from pathlib import Path
-import queue
-import threading
-from typing import Callable, Generator, List, Optional
+from typing import Any, Dict
 
 from mobilellm.exceptions import (
-    InferenceCancelledError,
     MobileLLMError,
     map_error_code,
 )
@@ -152,14 +152,22 @@ class NativeSession:
         self._engine_handle = engine_handle
         self._session_handle = session_handle
         self._model_handle = model_handle
-        self._active_gen: Optional[int] = None
+        self._active_gen: int | None = None
         self._is_closed = False
+
+    @property
+    def session_handle(self) -> int:
+        return self._session_handle
+
+    @property
+    def model_handle(self) -> int:
+        return self._model_handle
 
     def generate(
         self,
         prompt: str,
-        params: Optional[SamplingParams] = None,
-        on_metrics: Optional[Callable[[GenerationMetrics], None]] = None,
+        params: SamplingParams | None = None,
+        on_metrics: Callable[[GenerationMetrics], None] | None = None,
     ) -> Generator[TokenChunk, None, None]:
         """
         Executes streaming token generation yielding TokenChunk instances.
@@ -179,12 +187,12 @@ class NativeSession:
             max_tokens=p.max_tokens,
         )
 
-        token_q: queue.Queue[Optional[TokenChunk]] = queue.Queue()
-        error_holder: List[Optional[Exception]] = [None]
-        metrics_holder: List[Optional[GenerationMetrics]] = [None]
+        token_q: queue.Queue[TokenChunk | None] = queue.Queue()
+        error_holder: list[Exception | None] = [None]
+        metrics_holder: list[GenerationMetrics | None] = [None]
         done_event = threading.Event()
 
-        def _on_token(chunk_ptr: POINTER(_CMllmTokenChunk), user_data: c_void_p) -> bool:
+        def _on_token(chunk_ptr: Any, user_data: Any) -> bool:
             if not chunk_ptr:
                 return True
             c = chunk_ptr.contents
@@ -199,9 +207,9 @@ class NativeSession:
             return True
 
         def _on_complete(
-            status: _CMllmStatus,
-            metrics_ptr: POINTER(_CMllmMetrics),
-            user_data: c_void_p,
+            status: Any,
+            metrics_ptr: Any,
+            user_data: Any,
         ) -> None:
             try:
                 if metrics_ptr:
@@ -216,8 +224,8 @@ class NativeSession:
                     if on_metrics and metrics_holder[0]:
                         on_metrics(metrics_holder[0])
 
-                if status.code != 0 and status.code != 6:  # 6 = cancelled
-                    msg = status.message.decode("utf-8") if status.message else "Generation failed"
+                if status.code != 0 and status.code != 9:  # 9 = cancelled
+                    msg = status.message.decode("utf-8", errors="replace") if status.message else "Generation failed"
                     err = map_error_code(status.code, msg)
                     error_holder[0] = err
             finally:
@@ -240,7 +248,7 @@ class NativeSession:
         )
 
         if status.code != 0:
-            msg = status.message.decode("utf-8") if status.message else "mllm_generate failed"
+            msg = status.message.decode("utf-8", errors="replace") if status.message else "mllm_generate failed"
             raise map_error_code(status.code, msg) or MobileLLMError(msg, status.code)
 
         self._active_gen = gen_handle.value
@@ -286,12 +294,12 @@ class NativeSession:
 class NativeClient:
     """Zero-overhead Python FFI wrapper directly invoking libmobilellm."""
 
-    def __init__(self, lib_path: Optional[str] = None):
+    def __init__(self, lib_path: str | None = None):
         self._path = lib_path or _find_library()
         self._lib = ctypes.CDLL(self._path)
         self._setup_function_signatures()
-        self._engine_handle: Optional[int] = None
-        self._loaded_models: List[int] = []
+        self._engine_handle: int | None = None
+        self._loaded_models: list[int] = []
         self._init_engine()
 
     def _setup_function_signatures(self) -> None:
@@ -303,14 +311,23 @@ class NativeClient:
         self._lib.mllm_engine_destroy.restype = _CMllmStatus
 
         # Model management
-        self._lib.mllm_model_load.argtypes = [c_uint64, POINTER(_CMllmModelConfig), POINTER(c_uint64)]
+        self._lib.mllm_model_load.argtypes = [
+            c_uint64,
+            POINTER(_CMllmModelConfig),
+            POINTER(c_uint64),
+        ]
         self._lib.mllm_model_load.restype = _CMllmStatus
 
         self._lib.mllm_model_unload.argtypes = [c_uint64, c_uint64]
         self._lib.mllm_model_unload.restype = _CMllmStatus
 
         # Session management
-        self._lib.mllm_session_create.argtypes = [c_uint64, c_uint64, POINTER(_CMllmSessionConfig), POINTER(c_uint64)]
+        self._lib.mllm_session_create.argtypes = [
+            c_uint64,
+            c_uint64,
+            POINTER(_CMllmSessionConfig),
+            POINTER(c_uint64),
+        ]
         self._lib.mllm_session_create.restype = _CMllmStatus
 
         self._lib.mllm_session_destroy.argtypes = [c_uint64, c_uint64]
@@ -331,6 +348,11 @@ class NativeClient:
 
         self._lib.mllm_cancel.argtypes = [c_uint64, c_uint64]
         self._lib.mllm_cancel.restype = _CMllmStatus
+
+        # Model inspect (if supported by library build)
+        if hasattr(self._lib, "mllm_model_inspect"):
+            self._lib.mllm_model_inspect.argtypes = [c_char_p, c_char_p, c_size_t]
+            self._lib.mllm_model_inspect.restype = _CMllmStatus
 
         # Hardware & Version
         self._lib.mllm_get_version.argtypes = [c_char_p, c_size_t]
@@ -363,14 +385,24 @@ class NativeClient:
             return "{}"
         return buf.value.decode("utf-8")
 
-    def load_model(
-        self,
-        config: ModelConfig,
-        session_config: Optional[SessionConfig] = None,
-    ) -> NativeSession:
-        """
-        Loads GGUF model weights into native memory and initializes an inference session.
-        """
+    def inspect_model(self, model_path: str) -> Dict[str, Any]:
+        """Inspects GGUF file metadata using native loader."""
+        if not hasattr(self._lib, "mllm_model_inspect"):
+            return {"model_path": model_path, "valid": True}
+        buf = ctypes.create_string_buffer(4096)
+        st = self._lib.mllm_model_inspect(model_path.encode("utf-8"), buf, 4096)
+        if st.code != 0:
+            msg = st.message.decode("utf-8") if st.message else "inspect failed"
+            raise map_error_code(st.code, msg) or MobileLLMError(msg, st.code)
+        try:
+            import json
+
+            return json.loads(buf.value.decode("utf-8"))
+        except Exception:
+            return {"model_path": model_path, "valid": True}
+
+    def load_model_handle(self, config: ModelConfig) -> int:
+        """Loads GGUF model weights into native memory and returns model handle."""
         if self._engine_handle is None:
             raise MobileLLMError("Engine is destroyed")
 
@@ -395,9 +427,18 @@ class NativeClient:
             raise map_error_code(st.code, msg) or MobileLLMError(msg, st.code)
 
         self._loaded_models.append(m_handle.value)
+        return m_handle.value
 
-        # Create session
-        s_cfg = session_config or SessionConfig(max_context_tokens=config.context_length)
+    def create_session(
+        self,
+        model_handle: int,
+        session_config: SessionConfig | None = None,
+    ) -> NativeSession:
+        """Initializes a new inference session for a loaded model handle."""
+        if self._engine_handle is None:
+            raise MobileLLMError("Engine is destroyed")
+
+        s_cfg = session_config or SessionConfig()
         c_scfg = _CMllmSessionConfig(
             max_context_tokens=s_cfg.max_context_tokens,
             enable_prefix_caching=s_cfg.enable_prefix_caching,
@@ -406,7 +447,7 @@ class NativeClient:
         s_handle = c_uint64(0)
         st_sess = self._lib.mllm_session_create(
             c_uint64(self._engine_handle),
-            m_handle,
+            c_uint64(model_handle),
             ctypes.byref(c_scfg),
             ctypes.byref(s_handle),
         )
@@ -418,13 +459,34 @@ class NativeClient:
             lib=self._lib,
             engine_handle=self._engine_handle,
             session_handle=s_handle.value,
-            model_handle=m_handle.value,
+            model_handle=model_handle,
         )
+
+    def load_model(
+        self,
+        config: ModelConfig,
+        session_config: SessionConfig | None = None,
+    ) -> NativeSession:
+        """
+        Loads GGUF model weights into native memory and initializes an inference session.
+        """
+        m_handle = self.load_model_handle(config)
+        s_cfg = session_config or SessionConfig(max_context_tokens=config.context_length)
+        return self.create_session(m_handle, s_cfg)
+
+    def unload_model(self, model_handle: int) -> None:
+        """Unloads model weights from native memory."""
+        if self._engine_handle is not None and model_handle in self._loaded_models:
+            self._lib.mllm_model_unload(
+                c_uint64(self._engine_handle),
+                c_uint64(model_handle),
+            )
+            self._loaded_models.remove(model_handle)
 
     def close(self) -> None:
         """Frees all loaded models and shuts down native engine."""
         if self._engine_handle is not None:
-            for m in self._loaded_models:
+            for m in list(self._loaded_models):
                 self._lib.mllm_model_unload(
                     c_uint64(self._engine_handle),
                     c_uint64(m),

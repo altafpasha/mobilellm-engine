@@ -16,3 +16,4 @@
 | [**ADR-0005**](file:///Users/Apple/Developer/ai-apps/MobileLLM/docs/adr/0005-hardware-backend-abstraction-and-fallback-policy.md) | Hardware Abstraction Layer & Automatic CPU Fallback Policy | 2026-11-11 | **Accepted** | Agent 0 & Agent 5 |
 | [**ADR-0006**](file:///Users/Apple/Developer/ai-apps/MobileLLM/docs/adr/0006-mobile-memory-budgeting-and-paged-kv-cache.md) | Mobile Memory Budgeting, Paged KV-Cache & Zero SQLite Tensors | 2026-11-11 | **Accepted** | Agent 0 & Agent 2 |
 | [**ADR-0007**](file:///Users/Apple/Developer/ai-apps/MobileLLM/docs/adr/0007-optional-loopback-api-and-openai-compatibility.md) | Optional Loopback-Only HTTP Service & OpenAI API Compatibility | 2026-11-11 | **Accepted** | Agent 0 & Agent 4 |
+| [**ADR-0008**](file:///Users/Apple/Developer/ai-apps/MobileLLM/docs/adr/ADR-0008-scheduler-runtime-integration.md) | Scheduler and Mobile Resource Manager Runtime Integration | 2026-11-12 | **Accepted** | Agent 0 (Architect) |

@@ -28,10 +28,29 @@ EngineImpl::~EngineImpl() {
 
 void EngineImpl::set_backend_override(std::unique_ptr<IBackend> backend) {
     std::lock_guard<std::mutex> lock(engine_mutex_);
+    if (scheduler_) {
+        scheduler_->stop();
+    }
     backend_ = std::move(backend);
+    if (initialized_ && backend_) {
+        scheduler::SchedulerConfig s_cfg;
+        s_cfg.bytes_per_kv_block = 0; // Virtual block tracking: 0 bytes dummy buffer
+        scheduler_ = std::make_unique<scheduler::ContinuousBatchScheduler>(backend_, memory_mgr_, s_cfg);
+        scheduler_->start();
+    }
 }
 
-Status EngineImpl::initialize(const EngineConfig& /*config*/) noexcept {
+std::shared_ptr<scheduler::MemoryBudgetManager> EngineImpl::memory_manager() const noexcept {
+    std::lock_guard<std::mutex> lock(engine_mutex_);
+    return memory_mgr_;
+}
+
+scheduler::ContinuousBatchScheduler* EngineImpl::scheduler() const noexcept {
+    std::lock_guard<std::mutex> lock(engine_mutex_);
+    return scheduler_.get();
+}
+
+Status EngineImpl::initialize(const EngineConfig& config) noexcept {
     std::lock_guard<std::mutex> lock(engine_mutex_);
     if (initialized_) {
         return Status::ok();
@@ -64,34 +83,73 @@ Status EngineImpl::initialize(const EngineConfig& /*config*/) noexcept {
         return b_stat;
     }
 
+    // Initialize MemoryBudgetManager and ContinuousBatchScheduler explicitly
+    if (!memory_mgr_) {
+        memory_mgr_ = std::make_shared<scheduler::MemoryBudgetManager>();
+    }
+    if (config.max_total_memory_budget_mb > 0.0f) {
+        uint64_t ceiling_bytes = static_cast<uint64_t>(config.max_total_memory_budget_mb * 1024ULL * 1024ULL);
+        memory_mgr_->recalculate_budget(ceiling_bytes);
+    }
+
+    scheduler::SchedulerConfig s_cfg;
+    s_cfg.bytes_per_kv_block = 0; // Virtual block tracking: 0 bytes dummy buffer
+    scheduler_ = std::make_unique<scheduler::ContinuousBatchScheduler>(backend_, memory_mgr_, s_cfg);
+    Status sched_st = scheduler_->start();
+    if (!sched_st.is_ok()) {
+        return sched_st;
+    }
+
+    shutting_down_ = false;
     initialized_ = true;
     return Status::ok();
 }
 
 Status EngineImpl::shutdown() noexcept {
-    // 1. Cancel all active generations
-    {
-        std::lock_guard<std::mutex> lock(gen_mutex_);
-        for (auto& [_, state] : active_generations_) {
-            if (state) {
-                state->is_cancelled.store(true);
-            }
-        }
-        for (auto& [_, state] : active_generations_) {
-            if (state && state->worker.joinable()) {
-                state->worker.join();
-            }
-        }
-        active_generations_.clear();
+    if (shutting_down_.exchange(true)) {
+        return Status::ok();
     }
 
-    // 2. Clear sessions and models
+    // 1. Cancel all active requests
+    std::vector<GenerationHandle> handles_to_cancel;
+    {
+        std::lock_guard<std::mutex> lock(active_req_mutex_);
+        for (const auto& [handle, req] : active_requests_) {
+            handles_to_cancel.push_back(handle);
+        }
+    }
+
+    if (scheduler_) {
+        for (auto h : handles_to_cancel) {
+            scheduler_->cancel_request(h);
+        }
+        // 2. Stop scheduler (joins worker thread and completes remaining requests)
+        scheduler_->stop();
+        scheduler_.reset();
+    }
+
+    // Wait until in-flight requests drain (with timeout)
+    {
+        std::unique_lock<std::mutex> lock(active_req_mutex_);
+        in_flight_cv_.wait_for(lock, std::chrono::milliseconds(500), [this]() {
+            return active_requests_.empty();
+        });
+        active_requests_.clear();
+    }
+
+    // 3. Clear sessions and models and release memory reservations
     std::lock_guard<std::mutex> lock(engine_mutex_);
     if (backend_) {
         for (auto& [_, s] : sessions_) {
+            if (memory_mgr_) {
+                memory_mgr_->deallocate(s.reserved_kv_bytes, scheduler::AllocationType::KV_CACHE);
+            }
             backend_->destroy_session(s.backend_handle);
         }
         for (auto& [_, m] : models_) {
+            if (memory_mgr_) {
+                memory_mgr_->deallocate(m.reserved_memory_bytes, scheduler::AllocationType::MODEL_WEIGHTS);
+            }
             backend_->unload_model(m.backend_handle);
         }
         backend_->shutdown();
@@ -100,7 +158,54 @@ Status EngineImpl::shutdown() noexcept {
     sessions_.clear();
     models_.clear();
     initialized_ = false;
+    shutting_down_ = false;
     return Status::ok();
+}
+
+uint64_t EngineImpl::calculate_model_memory_bytes(const ModelLoadConfig& config, bool& out_is_estimated) const noexcept {
+    if (config.memory_budget_mb > 0.0f) {
+        out_is_estimated = false;
+        return static_cast<uint64_t>(config.memory_budget_mb * 1024ULL * 1024ULL);
+    }
+
+    auto meta_res = ModelLoader::inspect_file(config.model_path);
+    if (meta_res.is_ok() && meta_res.value().file_size_bytes > 0) {
+        out_is_estimated = false;
+        return meta_res.value().file_size_bytes;
+    }
+
+    std::error_code ec;
+    uint64_t fs = std::filesystem::file_size(config.model_path, ec);
+    if (!ec && fs > 0) {
+        out_is_estimated = false;
+        return fs;
+    }
+
+    // Fallback nominal estimate for synthetic / mock models without physical disk files
+    out_is_estimated = true;
+    return 100ULL * 1024ULL * 1024ULL; // 100 MB nominal estimate
+}
+
+uint64_t EngineImpl::calculate_session_kv_bytes(
+    const ModelEntry& model_entry,
+    const SessionConfig& config,
+    bool& out_is_estimated
+) const noexcept {
+    uint32_t ctx_tokens = config.max_context_tokens > 0 ? config.max_context_tokens : 2048;
+
+    if (model_entry.has_metadata && model_entry.metadata.block_count > 0 &&
+        model_entry.metadata.head_count > 0 && model_entry.metadata.embedding_length > 0) {
+        const auto& meta = model_entry.metadata;
+        uint32_t head_dim = meta.embedding_length / meta.head_count;
+        // 2 for K and V, FP16 (2 bytes per element)
+        uint64_t bytes_per_token = 2ULL * meta.block_count * meta.head_count * head_dim * 2ULL;
+        out_is_estimated = false;
+        return bytes_per_token * ctx_tokens;
+    }
+
+    // Fallback nominal estimate for mobile models without GGUF metadata: ~22.5 KB/token
+    out_is_estimated = true;
+    return static_cast<uint64_t>(ctx_tokens) * 23040ULL;
 }
 
 Result<ModelHandle> EngineImpl::load_model(const ModelLoadConfig& config) noexcept {
@@ -114,31 +219,106 @@ Result<ModelHandle> EngineImpl::load_model(const ModelLoadConfig& config) noexce
         return Status::error(StatusCode::BACKEND_INITIALIZATION_FAILED, "No compute backend initialized");
     }
 
+    // 1. Calculate memory requirement (distinguishing estimate from measured)
+    bool is_estimated = false;
+    uint64_t model_bytes = calculate_model_memory_bytes(config, is_estimated);
+
+    // 2. Memory budget check and allocation
+    if (memory_mgr_) {
+        if (!memory_mgr_->can_allocate(model_bytes, scheduler::AllocationType::MODEL_WEIGHTS)) {
+            auto status = memory_mgr_->get_status();
+            return Status::error(
+                StatusCode::OUT_OF_MEMORY,
+                "Model memory reservation of " + std::to_string(model_bytes / (1024 * 1024)) +
+                " MB (" + (is_estimated ? "estimated" : "measured") +
+                ") exceeds available memory budget ceiling of " +
+                std::to_string(status.total_budget_ceiling_bytes / (1024 * 1024)) + " MB (current usage: " +
+                std::to_string(status.current_usage_bytes / (1024 * 1024)) + " MB)"
+            );
+        }
+        Status alloc_st = memory_mgr_->allocate(model_bytes, scheduler::AllocationType::MODEL_WEIGHTS);
+        if (!alloc_st.is_ok()) {
+            return alloc_st;
+        }
+    }
+
+    // 3. Backend load execution
     auto b_res = backend_->load_model(config);
     if (!b_res.is_ok()) {
+        // Rollback reservation on failure!
+        if (memory_mgr_) {
+            memory_mgr_->deallocate(model_bytes, scheduler::AllocationType::MODEL_WEIGHTS);
+        }
         return b_res.status();
     }
 
     ModelHandle m_handle = next_model_id_++;
-    models_[m_handle] = ModelEntry{m_handle, b_res.value(), config.model_path};
+    ModelEntry entry;
+    entry.handle = m_handle;
+    entry.backend_handle = b_res.value();
+    entry.path = config.model_path;
+    entry.reserved_memory_bytes = model_bytes;
+    entry.is_memory_estimated = is_estimated;
+
+    auto meta_res = ModelLoader::inspect_file(config.model_path);
+    if (meta_res.is_ok()) {
+        entry.metadata = meta_res.value();
+        entry.has_metadata = true;
+    }
+
+    models_[m_handle] = entry;
     return m_handle;
 }
 
 Status EngineImpl::unload_model(ModelHandle model) noexcept {
+    // 1. Find sessions belonging to this model and cancel active requests
+    if (scheduler_) {
+        std::vector<GenerationHandle> handles_to_cancel;
+        {
+            std::lock_guard<std::mutex> lock(active_req_mutex_);
+            for (const auto& [h, info] : active_requests_) {
+                if (info && info->model_handle == model) {
+                    handles_to_cancel.push_back(h);
+                }
+            }
+        }
+        for (auto h : handles_to_cancel) {
+            scheduler_->cancel_request(h);
+        }
+
+        std::unique_lock<std::mutex> lock(active_req_mutex_);
+        in_flight_cv_.wait_for(lock, std::chrono::milliseconds(1000), [this, model]() {
+            for (const auto& [_, info] : active_requests_) {
+                if (info && info->model_handle == model) return false;
+            }
+            return true;
+        });
+    }
+
+    // 2. Destroy sessions and release memory reservations
     std::lock_guard<std::mutex> lock(engine_mutex_);
     auto it = models_.find(model);
     if (it == models_.end()) {
         return Status::error(StatusCode::MODEL_NOT_LOADED, "Model handle not recognized");
     }
 
-    // Close any sessions using this model
     for (auto s_it = sessions_.begin(); s_it != sessions_.end();) {
         if (s_it->second.model_handle == model) {
+            if (scheduler_ && scheduler_->session_manager()) {
+                scheduler_->session_manager()->destroy_session(s_it->first);
+            }
+            if (memory_mgr_) {
+                memory_mgr_->deallocate(s_it->second.reserved_kv_bytes, scheduler::AllocationType::KV_CACHE);
+            }
             backend_->destroy_session(s_it->second.backend_handle);
             s_it = sessions_.erase(s_it);
         } else {
             ++s_it;
         }
+    }
+
+    if (memory_mgr_) {
+        memory_mgr_->deallocate(it->second.reserved_memory_bytes, scheduler::AllocationType::MODEL_WEIGHTS);
     }
 
     Status st = backend_->unload_model(it->second.backend_handle);
@@ -153,21 +333,95 @@ Result<SessionHandle> EngineImpl::create_session(ModelHandle model, const Sessio
         return Status::error(StatusCode::MODEL_NOT_LOADED, "Model handle not loaded");
     }
 
+    // 1. Calculate KV-cache memory requirement (distinguishing estimate from measured)
+    bool is_kv_estimated = false;
+    uint64_t kv_bytes = calculate_session_kv_bytes(m_it->second, config, is_kv_estimated);
+
+    // 2. Memory budget check and allocation
+    if (memory_mgr_) {
+        if (!memory_mgr_->can_allocate(kv_bytes, scheduler::AllocationType::KV_CACHE)) {
+            auto status = memory_mgr_->get_status();
+            return Status::error(
+                StatusCode::OUT_OF_MEMORY,
+                "Session KV-cache reservation of " + std::to_string(kv_bytes / (1024 * 1024)) +
+                " MB (" + (is_kv_estimated ? "estimated" : "measured") +
+                ") exceeds available memory budget ceiling of " +
+                std::to_string(status.total_budget_ceiling_bytes / (1024 * 1024)) + " MB (current usage: " +
+                std::to_string(status.current_usage_bytes / (1024 * 1024)) + " MB)"
+            );
+        }
+        Status alloc_st = memory_mgr_->allocate(kv_bytes, scheduler::AllocationType::KV_CACHE);
+        if (!alloc_st.is_ok()) {
+            return alloc_st;
+        }
+    }
+
+    // 3. Backend session creation
     auto b_res = backend_->create_session(m_it->second.backend_handle, config);
     if (!b_res.is_ok()) {
+        // Rollback reservation on failure!
+        if (memory_mgr_) {
+            memory_mgr_->deallocate(kv_bytes, scheduler::AllocationType::KV_CACHE);
+        }
         return b_res.status();
     }
 
     SessionHandle s_handle = next_session_id_++;
-    sessions_[s_handle] = SessionEntry{s_handle, model, b_res.value()};
+    SessionEntry s_entry;
+    s_entry.handle = s_handle;
+    s_entry.model_handle = model;
+    s_entry.backend_handle = b_res.value();
+    s_entry.reserved_kv_bytes = kv_bytes;
+    s_entry.is_kv_estimated = is_kv_estimated;
+    sessions_[s_handle] = s_entry;
+
+    if (scheduler_ && scheduler_->session_manager()) {
+        scheduler_->session_manager()->create_session_with_handle(
+            s_handle, model, b_res.value(), config
+        );
+    }
+
     return s_handle;
 }
 
 Status EngineImpl::destroy_session(SessionHandle session) noexcept {
+    // 1. Cancel and drain active requests for this session
+    if (scheduler_) {
+        std::vector<GenerationHandle> handles_to_cancel;
+        {
+            std::lock_guard<std::mutex> lock(active_req_mutex_);
+            for (const auto& [h, info] : active_requests_) {
+                if (info && info->session_handle == session) {
+                    handles_to_cancel.push_back(h);
+                }
+            }
+        }
+        for (auto h : handles_to_cancel) {
+            scheduler_->cancel_request(h);
+        }
+
+        std::unique_lock<std::mutex> lock(active_req_mutex_);
+        in_flight_cv_.wait_for(lock, std::chrono::milliseconds(1000), [this, session]() {
+            for (const auto& [_, info] : active_requests_) {
+                if (info && info->session_handle == session) return false;
+            }
+            return true;
+        });
+    }
+
+    // 2. Destroy session under engine_mutex_
     std::lock_guard<std::mutex> lock(engine_mutex_);
     auto it = sessions_.find(session);
     if (it == sessions_.end()) {
         return Status::error(StatusCode::SESSION_NOT_FOUND, "Session handle not recognized");
+    }
+
+    if (scheduler_ && scheduler_->session_manager()) {
+        scheduler_->session_manager()->destroy_session(session);
+    }
+
+    if (memory_mgr_) {
+        memory_mgr_->deallocate(it->second.reserved_kv_bytes, scheduler::AllocationType::KV_CACHE);
     }
 
     Status st = backend_->destroy_session(it->second.backend_handle);
@@ -181,6 +435,13 @@ Result<GenerationHandle> EngineImpl::generate_async(
     TokenCallback token_cb,
     CompletionCallback complete_cb
 ) noexcept {
+    if (shutting_down_.load()) {
+        return Status::error(StatusCode::INTERNAL_ERROR, "Engine is shutting down");
+    }
+    if (!initialized_.load()) {
+        return Status::error(StatusCode::INTERNAL_ERROR, "Engine is not initialized");
+    }
+
     SessionEntry session_entry;
     {
         std::lock_guard<std::mutex> lock(engine_mutex_);
@@ -195,137 +456,56 @@ Result<GenerationHandle> EngineImpl::generate_async(
         return Status::error(StatusCode::INVALID_ARGUMENT, "Prompt cannot be empty");
     }
 
-    GenerationHandle gen_handle = next_gen_id_++;
-    auto state = std::make_shared<GenerationState>();
-    state->handle = gen_handle;
-    state->session_handle = session;
-    state->is_cancelled.store(false);
-    state->is_finished.store(false);
-
-    {
-        std::lock_guard<std::mutex> lock(gen_mutex_);
-        active_generations_[gen_handle] = state;
+    if (!scheduler_ || !scheduler_->is_running()) {
+        return Status::error(StatusCode::INTERNAL_ERROR, "Scheduler is not initialized or running");
     }
 
-    // Launch worker thread
-    state->worker = std::thread(
-        &EngineImpl::run_generation,
-        this,
-        state,
-        session_entry,
+    auto req_info = std::make_shared<ActiveRequestInfo>();
+    req_info->session_handle = session;
+    req_info->model_handle = session_entry.model_handle;
+
+    auto wrapped_complete = [this, req_info, user_cb = std::move(complete_cb)](const Status& st, const GenerationMetrics& m) {
+        req_info->is_finished.store(true);
+        {
+            std::lock_guard<std::mutex> lock(active_req_mutex_);
+            active_requests_.erase(req_info->handle);
+        }
+        in_flight_cv_.notify_all();
+
+        if (user_cb) {
+            user_cb(st, m);
+        }
+    };
+
+    auto sub_res = scheduler_->submit_request(
+        session,
         request,
-        token_cb,
-        complete_cb
+        scheduler::RequestPriority::NORMAL,
+        std::move(token_cb),
+        std::move(wrapped_complete)
     );
+
+    if (!sub_res.is_ok()) {
+        return sub_res.status();
+    }
+
+    GenerationHandle gen_handle = sub_res.value();
+    req_info->handle = gen_handle;
+    {
+        std::lock_guard<std::mutex> lock(active_req_mutex_);
+        if (!req_info->is_finished.load()) {
+            active_requests_[gen_handle] = req_info;
+        }
+    }
 
     return gen_handle;
 }
 
-void EngineImpl::run_generation(
-    std::shared_ptr<GenerationState> state,
-    SessionEntry session_entry,
-    GenerationRequest request,
-    TokenCallback token_cb,
-    CompletionCallback complete_cb
-) {
-    GenerationMetrics metrics;
-    auto t_start = std::chrono::high_resolution_clock::now();
-
-    // Prompt evaluation
-    std::vector<int32_t> prompt_tokens;
-    Status eval_st = backend_->evaluate_prompt(
-        session_entry.backend_handle,
-        request.prompt,
-        prompt_tokens
-    );
-
-    if (!eval_st.is_ok()) {
-        LOGE("evaluate_prompt failed: %s (code %d)", eval_st.message.c_str(), static_cast<int>(eval_st.code));
-        state->is_finished.store(true);
-        if (complete_cb) {
-            complete_cb(eval_st, metrics);
-        }
-        return;
-    }
-
-    metrics.prompt_tokens = static_cast<uint32_t>(prompt_tokens.size());
-    LOGI("evaluate_prompt succeeded with %zu tokens", prompt_tokens.size());
-
-    bool first_token = true;
-    uint32_t generated_count = 0;
-    Status final_status = Status::ok();
-
-    while (generated_count < request.sampling.max_tokens) {
-        if (state->is_cancelled.load(std::memory_order_relaxed)) {
-            final_status = Status::error(StatusCode::CANCELLED, "Generation cancelled by user");
-            break;
-        }
-
-        auto sample_res = backend_->sample_next_token(session_entry.backend_handle, request.sampling);
-        if (!sample_res.is_ok()) {
-            final_status = sample_res.status();
-            LOGE("sample_next_token failed: %s (code %d)", final_status.message.c_str(), static_cast<int>(final_status.code));
-            break;
-        }
-
-        int32_t token_id = sample_res.value();
-        LOGI("Sampled token_id: %d (generated_count: %u)", token_id, generated_count);
-        if (backend_->is_eos_token(session_entry.backend_handle, token_id)) {
-            if (generated_count > 0) {
-                LOGI("Token %d is EOS token! Ending generation.", token_id);
-                break;
-            } else {
-                LOGI("Token %d is EOS token at step 0, continuing...", token_id);
-                continue;
-            }
-        }
-
-        if (first_token) {
-            auto t_first = std::chrono::high_resolution_clock::now();
-            metrics.time_to_first_token_ms = std::chrono::duration<double, std::milli>(t_first - t_start).count();
-            first_token = false;
-        }
-
-        std::string piece = backend_->decode_token(session_entry.backend_handle, token_id);
-        TokenChunk chunk;
-        chunk.text = piece;
-        chunk.token_id = token_id;
-        chunk.is_special = false;
-        chunk.logprob = 0.0f;
-
-        generated_count++;
-        metrics.completion_tokens = generated_count;
-
-        if (token_cb) {
-            bool keep_going = token_cb(chunk);
-            if (!keep_going) {
-                final_status = Status::error(StatusCode::CANCELLED, "Cancellation requested via token callback");
-                break;
-            }
-        }
-    }
-
-    auto t_end = std::chrono::high_resolution_clock::now();
-    double total_sec = std::chrono::duration<double>(t_end - t_start).count();
-    if (total_sec > 0.0 && generated_count > 0) {
-        metrics.decode_tokens_per_second = static_cast<double>(generated_count) / total_sec;
-    }
-
-    state->is_finished.store(true);
-    if (complete_cb) {
-        complete_cb(final_status, metrics);
-    }
-}
-
 Status EngineImpl::cancel(GenerationHandle handle) noexcept {
-    std::lock_guard<std::mutex> lock(gen_mutex_);
-    auto it = active_generations_.find(handle);
-    if (it == active_generations_.end()) {
-        return Status::error(StatusCode::INVALID_ARGUMENT, "Generation handle not active");
+    if (!scheduler_) {
+        return Status::error(StatusCode::INTERNAL_ERROR, "Scheduler not initialized");
     }
-
-    it->second->is_cancelled.store(true);
-    return Status::ok();
+    return scheduler_->cancel_request(handle);
 }
 
 EngineMetrics EngineImpl::get_metrics() const noexcept {
@@ -333,7 +513,13 @@ EngineMetrics EngineImpl::get_metrics() const noexcept {
     EngineMetrics m;
     m.active_models = models_.size();
     m.active_sessions = sessions_.size();
-    m.resident_memory_bytes = 0; // Populated by scheduler / OS
+    if (memory_mgr_) {
+        auto status = memory_mgr_->get_status();
+        m.resident_memory_bytes = status.current_usage_bytes;
+        m.kv_cache_allocated_bytes = status.kv_cache_bytes;
+        m.kv_cache_free_bytes = (status.total_budget_ceiling_bytes >= status.current_usage_bytes)
+            ? (status.total_budget_ceiling_bytes - status.current_usage_bytes) : 0;
+    }
     return m;
 }
 

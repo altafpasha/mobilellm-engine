@@ -27,6 +27,37 @@ Result<SessionHandle> SessionManager::create_session(
     SessionMetadata meta;
     meta.handle = handle;
     meta.model_handle = model;
+    meta.backend_handle = handle;
+    meta.state = SessionState::IDLE;
+    meta.current_tokens = 0;
+    meta.max_context_tokens = config.max_context_tokens > 0 ? config.max_context_tokens : 2048;
+    meta.last_active_us = get_current_time_us();
+    meta.turn_count = 0;
+    meta.overflow_policy = policy;
+
+    sessions_[handle] = meta;
+    return handle;
+}
+
+Result<SessionHandle> SessionManager::create_session_with_handle(
+    SessionHandle handle,
+    ModelHandle model,
+    BackendSessionHandle backend_handle,
+    const SessionConfig& config,
+    ContextOverflowPolicy policy
+) noexcept {
+    if (handle == 0) {
+        return Status::error(StatusCode::INVALID_ARGUMENT, "Invalid session handle");
+    }
+    if (model == 0) {
+        return Status::error(StatusCode::INVALID_ARGUMENT, "Invalid model handle for session creation");
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    SessionMetadata meta;
+    meta.handle = handle;
+    meta.model_handle = model;
+    meta.backend_handle = backend_handle > 0 ? backend_handle : handle;
     meta.state = SessionState::IDLE;
     meta.current_tokens = 0;
     meta.max_context_tokens = config.max_context_tokens > 0 ? config.max_context_tokens : 2048;

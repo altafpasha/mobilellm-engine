@@ -1,0 +1,88 @@
+name: Android Release APK
+
+on:
+  push:
+    branches: [ main, develop, feature/** ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Publish as a GitHub Release (requires release tag or version)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-release-apk:
+    name: Build & Package Android Release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Install Android NDK & CMake
+        run: |
+          echo "${ANDROID_HOME}/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "${ANDROID_HOME}/platform-tools" >> $GITHUB_PATH
+          export PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${PATH}"
+          echo "Accepting SDK licenses..."
+          yes | sdkmanager --licenses || true
+          echo "Installing NDK 27.1.12297006 and CMake 3.22.1..."
+          sdkmanager --install "ndk;27.1.12297006" "cmake;3.22.1"
+
+      - name: Ensure Executable Permissions
+        run: chmod +x android/gradlew
+
+      - name: Assemble Release APK
+        run: |
+          cd android
+          ./gradlew :app:assembleRelease --stacktrace
+
+      - name: Verify Signed Release APK
+        run: |
+          echo "Checking release output directory:"
+          ls -la android/app/build/outputs/apk/release/
+          if [ ! -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
+            echo "ERROR: app-release.apk not found!"
+            exit 1
+          fi
+          echo "Release APK successfully built and verified."
+
+      - name: Upload Release APK as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MobileLLM-Release-APK
+          path: android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 14
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release == true)
+        uses: softprops/action-gh-release@v2
+        with:
+          files: android/app/build/outputs/apk/release/app-release.apk
+          name: "MobileLLM Android Release ${{ github.ref_name }}"
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

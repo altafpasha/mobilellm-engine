@@ -7,8 +7,8 @@ KVCacheManager::KVCacheManager() = default;
 
 Status KVCacheManager::initialize(uint32_t total_blocks, size_t bytes_per_block) noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (total_blocks == 0 || bytes_per_block == 0) {
-        return Status::error(StatusCode::INVALID_ARGUMENT, "total_blocks and bytes_per_block must be positive");
+    if (total_blocks == 0) {
+        return Status::error(StatusCode::INVALID_ARGUMENT, "total_blocks must be positive");
     }
 
     total_blocks_ = total_blocks;
@@ -24,7 +24,9 @@ Status KVCacheManager::initialize(uint32_t total_blocks, size_t bytes_per_block)
         block_pool_[i].ref_count = 0;
         block_pool_[i].prefix_hash = 0;
         block_pool_[i].valid_tokens = 0;
-        block_pool_[i].buffer.resize(bytes_per_block, 0);
+        if (bytes_per_block > 0) {
+            block_pool_[i].buffer.resize(bytes_per_block, 0);
+        }
         free_block_indices_.push_back(i);
     }
 
@@ -207,7 +209,7 @@ Result<BlockId> KVCacheManager::acquire_shared_prefix_block(
     blk.prefix_hash = prefix_hash;
     blk.valid_tokens = TOKENS_PER_BLOCK;
 
-    if (initial_data && data_size > 0) {
+    if (initial_data && data_size > 0 && !blk.buffer.empty()) {
         size_t copy_bytes = std::min(data_size, blk.buffer.size());
         std::memcpy(blk.buffer.data(), initial_data, copy_bytes);
     }

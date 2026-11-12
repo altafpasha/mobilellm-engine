@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mobilellm/types.h"
+#include "backends/common/backend.h"
 #include "mobilellm/scheduler/kv_cache_manager.h"
 #include <cstdint>
 #include <unordered_map>
@@ -25,6 +26,7 @@ enum class ContextOverflowPolicy : uint32_t {
 struct SessionMetadata {
     SessionHandle handle{0};
     ModelHandle model_handle{0};
+    BackendSessionHandle backend_handle{0};
     SessionState state{SessionState::IDLE};
     uint32_t current_tokens{0};
     uint32_t max_context_tokens{2048};
@@ -43,6 +45,14 @@ public:
 
     Result<SessionHandle> create_session(
         ModelHandle model,
+        const SessionConfig& config,
+        ContextOverflowPolicy policy = ContextOverflowPolicy::SLIDING_WINDOW
+    ) noexcept;
+
+    Result<SessionHandle> create_session_with_handle(
+        SessionHandle handle,
+        ModelHandle model,
+        BackendSessionHandle backend_handle,
         const SessionConfig& config,
         ContextOverflowPolicy policy = ContextOverflowPolicy::SLIDING_WINDOW
     ) noexcept;
