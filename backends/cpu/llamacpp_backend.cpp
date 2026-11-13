@@ -14,6 +14,24 @@
 #include <vector>
 #include <string>
 
+static std::mutex g_llama_log_mutex;
+static std::string g_llama_last_error;
+
+static void llama_log_callback_capture(ggml_log_level level, const char* text, void* /*user_data*/) {
+    if (level == GGML_LOG_LEVEL_ERROR || level == GGML_LOG_LEVEL_WARN) {
+        std::lock_guard<std::mutex> lock(g_llama_log_mutex);
+        if (text) {
+            std::string s(text);
+            while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) {
+                s.pop_back();
+            }
+            if (!s.empty()) {
+                g_llama_last_error = s;
+            }
+        }
+    }
+}
+
 namespace mobilellm {
 
 LlamaCppBackend::LlamaCppBackend() = default;
@@ -25,6 +43,7 @@ LlamaCppBackend::~LlamaCppBackend() {
 Status LlamaCppBackend::initialize(const BackendConfig& /*config*/) noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!initialized_) {
+        llama_log_set(llama_log_callback_capture, nullptr);
         llama_backend_init();
         initialized_ = true;
     }
@@ -67,9 +86,23 @@ Result<BackendModelHandle> LlamaCppBackend::load_model(const ModelLoadConfig& co
     mparams.use_mmap = config.use_mmap;
     mparams.use_mlock = config.use_mlock;
 
+    {
+        std::lock_guard<std::mutex> lock(g_llama_log_mutex);
+        g_llama_last_error.clear();
+    }
+
     llama_model* raw = llama_load_model_from_file(config.model_path.c_str(), mparams);
     if (!raw) {
-        return Status::error(StatusCode::FILE_NOT_FOUND, "Failed to load model from: " + config.model_path);
+        std::string err_detail;
+        {
+            std::lock_guard<std::mutex> lock(g_llama_log_mutex);
+            err_detail = g_llama_last_error;
+        }
+        std::string err_msg = "Failed to load model from: " + config.model_path;
+        if (!err_detail.empty()) {
+            err_msg += " (" + err_detail + ")";
+        }
+        return Status::error(StatusCode::FILE_NOT_FOUND, err_msg);
     }
 
     std::lock_guard<std::mutex> lock(mutex_);

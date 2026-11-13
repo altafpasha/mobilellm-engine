@@ -105,7 +105,18 @@ Status MemoryBudgetManager::recalculate_budget(uint64_t custom_ceiling_bytes) no
     uint64_t effective_avail = (avail > safety_margin_) ? (avail - safety_margin_) : 0;
     uint64_t calculated_ceiling = static_cast<uint64_t>(effective_avail * MAX_AVAILABLE_RAM_RATIO);
 
-    if (custom_ceiling_bytes > 0 && custom_ceiling_bytes < calculated_ceiling) {
+    if (!simulated_) {
+        // On real hardware (Linux/Android), allow up to 85% of available RAM if it provides more headroom
+        // while preserving at least a 256MB safety cushion.
+        uint64_t min_safety_bytes = static_cast<uint64_t>(256ULL * 1024ULL * 1024ULL);
+        uint64_t mobile_ceiling = static_cast<uint64_t>(avail * 0.85f);
+        if (mobile_ceiling > calculated_ceiling && avail > min_safety_bytes) {
+            uint64_t max_safe = avail - min_safety_bytes;
+            calculated_ceiling = (mobile_ceiling < max_safe) ? mobile_ceiling : max_safe;
+        }
+    }
+
+    if (custom_ceiling_bytes > 0) {
         budget_ceiling_ = custom_ceiling_bytes;
     } else {
         budget_ceiling_ = calculated_ceiling;

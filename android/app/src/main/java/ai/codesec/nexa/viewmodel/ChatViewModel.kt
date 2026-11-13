@@ -256,9 +256,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     fun loadModel(file: File) {
         viewModelScope.launch {
             try {
+                // Ensure previous session and model weights are completely unloaded to release memory budget
                 activeSession?.close()
                 activeSession = null
+                client.unloadAllModels()
                 _uiState.update { it.copy(isModelLoaded = false, loadedModelName = null) }
+                refreshSystemStats()
 
                 val config = ModelConfig(
                     modelPath = file.absolutePath,
@@ -280,6 +283,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         errorMessage = null
                     )
                 }
+                refreshSystemStats()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to load model", e)
                 _uiState.update {
@@ -295,12 +299,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     fun unloadModel() {
         activeSession?.close()
         activeSession = null
+        client.unloadAllModels()
         _uiState.update {
             it.copy(
                 isModelLoaded = false,
                 loadedModelName = null
             )
         }
+        refreshSystemStats()
     }
 
     fun regenerateLastResponse() {

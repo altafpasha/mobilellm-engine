@@ -14,8 +14,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  * An active conversational session tied to a loaded model in native memory.
  */
 class ModelSession internal constructor(
-    private val engineHandle: Long,
-    val sessionHandle: Long
+    val engineHandle: Long,
+    val sessionHandle: Long,
+    val modelHandle: Long = 0L,
+    private val client: MobileLLMClient? = null
 ) : Closeable {
 
     private val isClosed = AtomicBoolean(false)
@@ -100,6 +102,9 @@ class ModelSession internal constructor(
     override fun close() {
         if (isClosed.compareAndSet(false, true)) {
             NativeBridge.nativeDestroySession(engineHandle, sessionHandle)
+            if (modelHandle != 0L) {
+                client?.unloadModel(modelHandle)
+            }
         }
     }
 }

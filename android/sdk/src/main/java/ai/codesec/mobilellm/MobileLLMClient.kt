@@ -119,7 +119,30 @@ class MobileLLMClient private constructor() : Closeable {
             )
         }
 
-        ModelSession(engineHandle, sessionHandle)
+        ModelSession(engineHandle, sessionHandle, modelHandle, this@MobileLLMClient)
+    }
+
+    /**
+     * Unloads a specific model by handle from native memory, releasing its weights and memory budget.
+     */
+    fun unloadModel(modelHandle: Long) {
+        synchronized(activeModels) {
+            if (activeModels.remove(modelHandle)) {
+                NativeBridge.nativeUnloadModel(engineHandle, modelHandle)
+            }
+        }
+    }
+
+    /**
+     * Unloads all loaded models from native memory, freeing all reserved weights and memory budget.
+     */
+    fun unloadAllModels() {
+        synchronized(activeModels) {
+            for (model in activeModels) {
+                NativeBridge.nativeUnloadModel(engineHandle, model)
+            }
+            activeModels.clear()
+        }
     }
 
     /**
