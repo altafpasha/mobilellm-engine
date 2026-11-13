@@ -93,9 +93,9 @@ fun ChatScreen(viewModel: ChatViewModel) {
         uri?.let { viewModel.importModel(it, context.contentResolver) }
     }
 
-    LaunchedEffect(uiState.messages.size, uiState.messages.lastOrNull()?.text) {
+    LaunchedEffect(uiState.messages.size) {
         if (uiState.messages.isNotEmpty()) {
-            listState.animateScrollToItem(uiState.messages.size - 1)
+            listState.scrollToItem(uiState.messages.size - 1)
         }
     }
 

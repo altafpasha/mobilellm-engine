@@ -95,10 +95,11 @@ Status MemoryBudgetManager::recalculate_budget(uint64_t custom_ceiling_bytes) no
     std::lock_guard<std::mutex> lock(mutex_);
 
     uint64_t avail = 0;
+    MemoryInfo sys_info;
     if (simulated_) {
         avail = sim_available_ram_;
     } else {
-        MemoryInfo sys_info = query_system_memory();
+        sys_info = query_system_memory();
         avail = sys_info.available_ram_bytes;
     }
 
@@ -113,6 +114,18 @@ Status MemoryBudgetManager::recalculate_budget(uint64_t custom_ceiling_bytes) no
         if (mobile_ceiling > calculated_ceiling && avail > min_safety_bytes) {
             uint64_t max_safe = avail - min_safety_bytes;
             calculated_ceiling = (mobile_ceiling < max_safe) ? mobile_ceiling : max_safe;
+        }
+
+        // On mobile devices, cached background processes are evicted by Android lmkd on demand.
+        // If total_ram_bytes is known, allow up to 75% of total RAM minus OS reserve (1.5 GB).
+        if (sys_info.total_ram_bytes > 0) {
+            uint64_t os_reserve = 1536ULL * 1024ULL * 1024ULL; // 1.5 GB for OS
+            if (sys_info.total_ram_bytes > os_reserve) {
+                uint64_t ram_based_ceiling = static_cast<uint64_t>((sys_info.total_ram_bytes - os_reserve) * 0.75f);
+                if (ram_based_ceiling > calculated_ceiling) {
+                    calculated_ceiling = ram_based_ceiling;
+                }
+            }
         }
     }
 

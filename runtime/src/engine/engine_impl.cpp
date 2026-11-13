@@ -197,8 +197,9 @@ uint64_t EngineImpl::calculate_session_kv_bytes(
         model_entry.metadata.head_count > 0 && model_entry.metadata.embedding_length > 0) {
         const auto& meta = model_entry.metadata;
         uint32_t head_dim = meta.embedding_length / meta.head_count;
+        uint32_t kv_heads = meta.head_count_kv > 0 ? meta.head_count_kv : meta.head_count;
         // 2 for K and V, FP16 (2 bytes per element)
-        uint64_t bytes_per_token = 2ULL * meta.block_count * meta.head_count * head_dim * 2ULL;
+        uint64_t bytes_per_token = 2ULL * meta.block_count * kv_heads * head_dim * 2ULL;
         out_is_estimated = false;
         return bytes_per_token * ctx_tokens;
     }

@@ -27,6 +27,7 @@ struct ModelMetadata {
     uint32_t embedding_length{0};
     uint32_t block_count{0};
     uint32_t head_count{0};
+    uint32_t head_count_kv{0};
     uint64_t tensor_count{0};
     uint64_t metadata_kv_count{0};
     uint64_t file_size_bytes{0};

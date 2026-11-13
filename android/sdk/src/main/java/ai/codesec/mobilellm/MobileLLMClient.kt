@@ -6,6 +6,8 @@ import ai.codesec.mobilellm.models.ModelMetadata
 import ai.codesec.mobilellm.models.SessionConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.io.Closeable
 import java.io.File
@@ -30,6 +32,7 @@ class MobileLLMClient private constructor() : Closeable {
     }
 
     private var engineHandle: Long = 0
+    private val initMutex = Mutex()
     private val isInitialized = AtomicBoolean(false)
     private val isClosed = AtomicBoolean(false)
     private val activeModels = mutableListOf<Long>()
@@ -48,15 +51,18 @@ class MobileLLMClient private constructor() : Closeable {
      * Initializes the native runtime engine. Safe to call multiple times.
      */
     suspend fun initialize(): Unit = withContext(Dispatchers.IO) {
-        if (isInitialized.compareAndSet(false, true)) {
-            val handle = NativeBridge.nativeInit()
-            if (handle == 0L) {
-                throw MobileLLMException(
-                    MobileLLMException.CODE_BACKEND_INIT_FAILED,
-                    "Failed to initialize native MobileLLM engine"
-                )
+        initMutex.withLock {
+            if (engineHandle == 0L && !isClosed.get()) {
+                val handle = NativeBridge.nativeInit()
+                if (handle == 0L) {
+                    throw MobileLLMException(
+                        MobileLLMException.CODE_BACKEND_INIT_FAILED,
+                        "Failed to initialize native MobileLLM engine"
+                    )
+                }
+                engineHandle = handle
+                isInitialized.set(true)
             }
-            engineHandle = handle
         }
     }
 
@@ -72,7 +78,7 @@ class MobileLLMClient private constructor() : Closeable {
         sessionConfig: SessionConfig = SessionConfig(config.contextLength)
     ): ModelSession = withContext(Dispatchers.IO) {
         check(!isClosed.get()) { "MobileLLMClient is closed" }
-        if (!isInitialized.get()) {
+        if (engineHandle == 0L) {
             initialize()
         }
 
@@ -105,18 +111,26 @@ class MobileLLMClient private constructor() : Closeable {
             activeModels.add(modelHandle)
         }
 
-        val sessionHandle = NativeBridge.nativeCreateSession(
-            engineHandle = engineHandle,
-            modelHandle = modelHandle,
-            maxContextTokens = sessionConfig.maxContextTokens,
-            enablePrefixCaching = sessionConfig.enablePrefixCaching
-        )
-
-        if (sessionHandle == 0L) {
-            throw MobileLLMException(
-                MobileLLMException.CODE_SESSION_NOT_FOUND,
-                "Failed to create native inference session"
+        val sessionHandle = try {
+            val handle = NativeBridge.nativeCreateSession(
+                engineHandle = engineHandle,
+                modelHandle = modelHandle,
+                maxContextTokens = sessionConfig.maxContextTokens,
+                enablePrefixCaching = sessionConfig.enablePrefixCaching
             )
+            if (handle == 0L) {
+                throw MobileLLMException(
+                    MobileLLMException.CODE_SESSION_NOT_FOUND,
+                    "Failed to create native inference session"
+                )
+            }
+            handle
+        } catch (e: Throwable) {
+            synchronized(activeModels) {
+                activeModels.remove(modelHandle)
+            }
+            NativeBridge.nativeUnloadModel(engineHandle, modelHandle)
+            throw e
         }
 
         ModelSession(engineHandle, sessionHandle, modelHandle, this@MobileLLMClient)

@@ -26,6 +26,8 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
@@ -82,17 +84,44 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val client: MobileLLMClient = MobileLLMClient.getInstance(application)
     private var activeSession: ModelSession? = null
     private var generationJob: Job? = null
+    private var loadModelJob: Job? = null
+    private val loadMutex = Mutex()
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
+    private val modelsDirs: List<File>
+        get() {
+            val app = getApplication<Application>()
+            val dirs = mutableListOf<File>()
+            dirs.add(File(app.filesDir, "models").apply { mkdirs() })
+            app.getExternalFilesDir("models")?.let { dirs.add(it.apply { mkdirs() }) }
+            return dirs
+        }
+
     private val modelsDir: File
-        get() = File(getApplication<Application>().filesDir, "models").apply { mkdirs() }
+        get() = modelsDirs.first()
 
     init {
-        refreshModelsList()
-        refreshSystemStats()
-        initializeEngine()
+        viewModelScope.launch {
+            try {
+                client.initialize()
+                val version = client.getVersion()
+                val hw = client.detectHardware()
+                _uiState.update {
+                    it.copy(
+                        engineVersion = version,
+                        hardwareInfo = hw
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to initialize engine", e)
+                _uiState.update { it.copy(errorMessage = "Engine init failed: ${e.message}") }
+            } finally {
+                refreshSystemStats()
+                refreshModelsList()
+            }
+        }
     }
 
     fun setScreen(screen: NexaScreen) {
@@ -130,28 +159,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun initializeEngine() {
-        viewModelScope.launch {
-            try {
-                client.initialize()
-                val version = client.getVersion()
-                val hw = client.detectHardware()
-                _uiState.update {
-                    it.copy(
-                        engineVersion = version,
-                        hardwareInfo = hw
-                    )
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to initialize engine", e)
-                _uiState.update { it.copy(errorMessage = "Engine init failed: ${e.message}") }
-            }
-        }
-    }
-
     fun refreshModelsList() {
-        val files = modelsDir.listFiles { f -> f.extension.equals("gguf", ignoreCase = true) }
-            ?.toList() ?: emptyList()
+        val files = modelsDirs.flatMap { dir ->
+            dir.listFiles { f -> f.extension.equals("gguf", ignoreCase = true) }?.toList() ?: emptyList()
+        }.filter { it.canRead() && it.length() > 0 }.distinctBy { it.name }
         val totalBytes = files.sumOf { it.length() }
         val freeBytes = modelsDir.freeSpace
 
@@ -179,8 +190,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(modelMetadataMap = metaMap) }
         }
 
-        // Auto-load first available model if none is currently active
-        if (!_uiState.value.isModelLoaded && activeSession == null && files.isNotEmpty()) {
+        // Auto-load first available model if none is currently active and not already loading
+        if (!_uiState.value.isModelLoaded && activeSession == null && files.isNotEmpty() && loadModelJob?.isActive != true) {
             loadModel(files.first())
         }
     }
@@ -219,6 +230,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                 }
+                targetFile.setReadable(true, false)
 
                 // Verify file header validity
                 val isValidGguf = try {
@@ -254,43 +266,46 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadModel(file: File) {
-        viewModelScope.launch {
-            try {
-                // Ensure previous session and model weights are completely unloaded to release memory budget
-                activeSession?.close()
-                activeSession = null
-                client.unloadAllModels()
-                _uiState.update { it.copy(isModelLoaded = false, loadedModelName = null) }
-                refreshSystemStats()
+        loadModelJob?.cancel()
+        loadModelJob = viewModelScope.launch {
+            loadMutex.withLock {
+                try {
+                    // Ensure previous session and model weights are completely unloaded to release memory budget
+                    activeSession?.close()
+                    activeSession = null
+                    client.unloadAllModels()
+                    _uiState.update { it.copy(isModelLoaded = false, loadedModelName = null) }
+                    refreshSystemStats()
 
-                val config = ModelConfig(
-                    modelPath = file.absolutePath,
-                    preferredBackend = _uiState.value.preferredBackend,
-                    contextLength = 2048,
-                    nThreads = _uiState.value.threadCount
-                )
-                val sessionConfig = SessionConfig(
-                    maxContextTokens = 2048,
-                    enablePrefixCaching = true
-                )
+                    val config = ModelConfig(
+                        modelPath = file.absolutePath,
+                        preferredBackend = _uiState.value.preferredBackend,
+                        contextLength = 2048,
+                        nThreads = _uiState.value.threadCount
+                    )
+                    val sessionConfig = SessionConfig(
+                        maxContextTokens = 2048,
+                        enablePrefixCaching = true
+                    )
 
-                val session = client.loadModel(config, sessionConfig)
-                activeSession = session
-                _uiState.update {
-                    it.copy(
-                        isModelLoaded = true,
-                        loadedModelName = file.name,
-                        errorMessage = null
-                    )
-                }
-                refreshSystemStats()
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to load model", e)
-                _uiState.update {
-                    it.copy(
-                        isModelLoaded = false,
-                        errorMessage = "Load model error: ${e.message}"
-                    )
+                    val session = client.loadModel(config, sessionConfig)
+                    activeSession = session
+                    _uiState.update {
+                        it.copy(
+                            isModelLoaded = true,
+                            loadedModelName = file.name,
+                            errorMessage = null
+                        )
+                    }
+                    refreshSystemStats()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to load model", e)
+                    _uiState.update {
+                        it.copy(
+                            isModelLoaded = false,
+                            errorMessage = "Load model error: ${e.message}"
+                        )
+                    }
                 }
             }
         }
@@ -352,7 +367,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
 
-        generationJob = viewModelScope.launch {
+        generationJob = viewModelScope.launch(Dispatchers.Default) {
             var fullText = ""
             var completedMetrics: GenerationMetrics? = null
 

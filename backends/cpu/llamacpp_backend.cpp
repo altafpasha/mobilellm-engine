@@ -3,9 +3,11 @@
 #ifdef __ANDROID__
 #include <android/log.h>
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "LlamaCppBackend", __VA_ARGS__)
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, "LlamaCppBackend", __VA_ARGS__)
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "LlamaCppBackend", __VA_ARGS__)
 #else
 #define LOGE(...)
+#define LOGW(...)
 #define LOGI(...)
 #endif
 
@@ -26,7 +28,10 @@ static void llama_log_callback_capture(ggml_log_level level, const char* text, v
                 s.pop_back();
             }
             if (!s.empty()) {
-                g_llama_last_error = s;
+                if (!g_llama_last_error.empty()) {
+                    g_llama_last_error += " | ";
+                }
+                g_llama_last_error += s;
             }
         }
     }
@@ -92,6 +97,11 @@ Result<BackendModelHandle> LlamaCppBackend::load_model(const ModelLoadConfig& co
     }
 
     llama_model* raw = llama_load_model_from_file(config.model_path.c_str(), mparams);
+    if (!raw && mparams.use_mmap) {
+        LOGW("Failed to load model with mmap, retrying with use_mmap=false...");
+        mparams.use_mmap = false;
+        raw = llama_load_model_from_file(config.model_path.c_str(), mparams);
+    }
     if (!raw) {
         std::string err_detail;
         {
