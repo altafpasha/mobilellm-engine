@@ -60,14 +60,33 @@ class ModelSession internal constructor(
                 tps: Double,
                 peakRssMb: Double
             ) {
-                val durationMs = (System.currentTimeMillis() - startTime).toDouble()
+                onCompleteDetailed(code, message, promptTokens, completionTokens, ttftMs, tps, peakRssMb, 0.0, 0.0, 0.0, 0.0)
+            }
+
+            override fun onCompleteDetailed(
+                code: Int,
+                message: String,
+                promptTokens: Int,
+                completionTokens: Int,
+                ttftMs: Double,
+                tps: Double,
+                peakRssMb: Double,
+                promptTps: Double,
+                prefillMs: Double,
+                decodeMs: Double,
+                totalMs: Double
+            ) {
+                val durationMs = if (totalMs > 0.0) totalMs else (System.currentTimeMillis() - startTime).toDouble()
                 val metrics = GenerationMetrics(
                     promptTokens = promptTokens,
                     completionTokens = completionTokens,
                     timeToFirstTokenMs = ttftMs,
                     tokensPerSecond = tps,
                     peakRssMb = peakRssMb,
-                    totalDurationMs = durationMs
+                    totalDurationMs = durationMs,
+                    promptTokensPerSecond = promptTps,
+                    prefillTimeMs = prefillMs,
+                    decodeTimeMs = decodeMs
                 )
                 onMetrics?.invoke(metrics)
 
@@ -98,6 +117,36 @@ class ModelSession internal constructor(
             }
         }
     }.buffer(kotlinx.coroutines.channels.Channel.UNLIMITED)
+
+    data class ContextTelemetry(
+        val contextCapacity: Int,
+        val usedTokens: Int,
+        val remainingCapacity: Int,
+        val isAvailable: Boolean
+    )
+
+    /**
+     * Queries physical KV-cache token count and context limits directly from the backend.
+     */
+    fun getContextTelemetry(): ContextTelemetry? {
+        if (isClosed.get()) return null
+        val telem = NativeBridge.nativeGetSessionContextTelemetry(engineHandle, sessionHandle) ?: return null
+        if (telem.size < 4) return null
+        return ContextTelemetry(
+            contextCapacity = telem[0],
+            usedTokens = telem[1],
+            remainingCapacity = telem[2],
+            isAvailable = telem[3] == 1
+        )
+    }
+
+    /**
+     * Dynamically updates the number of CPU threads allocated to this session without reloading.
+     */
+    fun setThreads(threads: Int): Boolean {
+        if (isClosed.get() || threads <= 0) return false
+        return NativeBridge.nativeSetSessionThreads(engineHandle, sessionHandle, threads)
+    }
 
     override fun close() {
         if (isClosed.compareAndSet(false, true)) {

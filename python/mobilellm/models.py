@@ -163,6 +163,10 @@ class GenerationMetrics:
     time_to_first_token_ms: float = 0.0
     tokens_per_second: float = 0.0
     peak_rss_mb: float = 0.0
+    prompt_tokens_per_second: float = 0.0
+    prefill_time_ms: float = 0.0
+    decode_time_ms: float = 0.0
+    total_duration_ms: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -171,6 +175,10 @@ class GenerationMetrics:
             "time_to_first_token_ms": self.time_to_first_token_ms,
             "tokens_per_second": self.tokens_per_second,
             "peak_rss_mb": self.peak_rss_mb,
+            "prompt_tokens_per_second": self.prompt_tokens_per_second,
+            "prefill_time_ms": self.prefill_time_ms,
+            "decode_time_ms": self.decode_time_ms,
+            "total_duration_ms": self.total_duration_ms,
         }
 
 

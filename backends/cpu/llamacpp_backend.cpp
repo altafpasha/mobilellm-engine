@@ -376,6 +376,36 @@ bool LlamaCppBackend::is_eos_token(BackendSessionHandle session, int32_t token_i
     return llama_token_is_eog(m_it->second->raw_model, static_cast<llama_token>(token_id));
 }
 
+SessionContextTelemetry LlamaCppBackend::get_session_telemetry(BackendSessionHandle session) const noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto s_it = sessions_.find(session);
+    if (s_it == sessions_.end() || !s_it->second || !s_it->second->raw_ctx) {
+        return SessionContextTelemetry{};
+    }
+
+    SessionContextTelemetry t;
+    llama_context* ctx = s_it->second->raw_ctx;
+    t.context_capacity = llama_n_ctx(ctx);
+    int32_t used = llama_get_kv_cache_used_cells(ctx);
+    t.used_tokens = used >= 0 ? static_cast<uint32_t>(used) : 0;
+    t.remaining_capacity = (t.context_capacity > t.used_tokens) ? (t.context_capacity - t.used_tokens) : 0;
+    t.is_available = true;
+    return t;
+}
+
+Status LlamaCppBackend::set_threads(BackendSessionHandle session, uint32_t n_threads) noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto s_it = sessions_.find(session);
+    if (s_it == sessions_.end() || !s_it->second || !s_it->second->raw_ctx) {
+        return Status::error(StatusCode::SESSION_NOT_FOUND, "Session not found");
+    }
+
+    int32_t threads = static_cast<int32_t>(n_threads);
+    if (threads <= 0) threads = 1;
+    llama_set_n_threads(s_it->second->raw_ctx, threads, threads);
+    return Status::ok();
+}
+
 } // namespace mobilellm
 
 #else
@@ -418,6 +448,14 @@ Result<int32_t> LlamaCppBackend::sample_next_token(BackendSessionHandle, const S
 
 std::string LlamaCppBackend::decode_token(BackendSessionHandle, int32_t) noexcept { return ""; }
 bool LlamaCppBackend::is_eos_token(BackendSessionHandle, int32_t) const noexcept { return false; }
+
+SessionContextTelemetry LlamaCppBackend::get_session_telemetry(BackendSessionHandle) const noexcept {
+    return SessionContextTelemetry{};
+}
+
+Status LlamaCppBackend::set_threads(BackendSessionHandle, uint32_t) noexcept {
+    return Status::error(StatusCode::NOT_IMPLEMENTED, "llama.cpp backend not compiled");
+}
 
 } // namespace mobilellm
 

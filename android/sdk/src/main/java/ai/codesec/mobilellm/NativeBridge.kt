@@ -73,5 +73,14 @@ internal object NativeBridge {
 
     @JvmStatic
     external fun nativeInspectModel(modelPath: String): String
+
+    @JvmStatic
+    external fun nativeGetProcessMemory(engineHandle: Long): LongArray?
+
+    @JvmStatic
+    external fun nativeGetSessionContextTelemetry(engineHandle: Long, sessionHandle: Long): IntArray?
+
+    @JvmStatic
+    external fun nativeSetSessionThreads(engineHandle: Long, sessionHandle: Long, nThreads: Int): Boolean
 }
 

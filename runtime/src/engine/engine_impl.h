@@ -46,6 +46,9 @@ public:
 
     EngineMetrics get_metrics() const noexcept override;
     HardwareProfile query_hardware() const noexcept override;
+    ProcessMemoryTelemetry get_process_memory() const noexcept override;
+    Result<ContextTelemetry> get_session_telemetry(SessionHandle session) const noexcept override;
+    Status set_session_threads(SessionHandle session, uint32_t n_threads) noexcept override;
 
     // For test injection & introspection
     void set_backend_override(std::unique_ptr<IBackend> backend);

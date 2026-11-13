@@ -16,6 +16,13 @@ struct BackendConfig {
     bool enable_profiling{false};
 };
 
+struct SessionContextTelemetry {
+    uint32_t context_capacity{0};
+    uint32_t used_tokens{0};
+    uint32_t remaining_capacity{0};
+    bool is_available{false};
+};
+
 /**
  * @brief Abstract interface defining compute and inference operations across backends.
  */
@@ -45,6 +52,14 @@ public:
 
     virtual std::string decode_token(BackendSessionHandle session, int32_t token_id) noexcept = 0;
     virtual bool is_eos_token(BackendSessionHandle session, int32_t token_id) const noexcept = 0;
+
+    virtual SessionContextTelemetry get_session_telemetry(BackendSessionHandle /*session*/) const noexcept {
+        return SessionContextTelemetry{};
+    }
+
+    virtual Status set_threads(BackendSessionHandle /*session*/, uint32_t /*n_threads*/) noexcept {
+        return Status::ok();
+    }
 
     virtual BackendType type() const noexcept = 0;
     virtual std::string name() const noexcept = 0;

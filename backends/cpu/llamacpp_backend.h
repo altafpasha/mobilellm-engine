@@ -41,6 +41,9 @@ public:
     std::string decode_token(BackendSessionHandle session, int32_t token_id) noexcept override;
     bool is_eos_token(BackendSessionHandle session, int32_t token_id) const noexcept override;
 
+    SessionContextTelemetry get_session_telemetry(BackendSessionHandle session) const noexcept override;
+    Status set_threads(BackendSessionHandle session, uint32_t n_threads) noexcept override;
+
     BackendType type() const noexcept override { return BackendType::CPU_NEON; }
     std::string name() const noexcept override { return "LlamaCpp_CPU_NEON"; }
 

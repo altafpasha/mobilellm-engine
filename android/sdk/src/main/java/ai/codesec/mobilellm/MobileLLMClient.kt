@@ -234,6 +234,34 @@ class MobileLLMClient private constructor() : Closeable {
         return NativeBridge.nativeDetectHardware()
     }
 
+    data class ProcessMemorySnapshot(
+        val currentRssBytes: Long = 0L,
+        val peakRssBytes: Long = 0L,
+        val vmSizeBytes: Long = 0L,
+        val modelAllocatedBytes: Long = 0L,
+        val kvAllocatedBytes: Long = 0L
+    ) {
+        val currentRssMb: Double get() = currentRssBytes / (1024.0 * 1024.0)
+        val peakRssMb: Double get() = peakRssBytes / (1024.0 * 1024.0)
+        val vmSizeMb: Double get() = vmSizeBytes / (1024.0 * 1024.0)
+        val modelAllocatedMb: Double get() = modelAllocatedBytes / (1024.0 * 1024.0)
+        val kvAllocatedMb: Double get() = kvAllocatedBytes / (1024.0 * 1024.0)
+    }
+
+    /**
+     * Queries process memory telemetry (RSS, Peak RSS, VmSize, Model & KV bytes).
+     */
+    fun getProcessMemory(): ProcessMemorySnapshot {
+        val arr = NativeBridge.nativeGetProcessMemory(engineHandle) ?: return ProcessMemorySnapshot()
+        return ProcessMemorySnapshot(
+            currentRssBytes = arr.getOrElse(0) { 0L },
+            peakRssBytes = arr.getOrElse(1) { 0L },
+            vmSizeBytes = arr.getOrElse(2) { 0L },
+            modelAllocatedBytes = arr.getOrElse(3) { 0L },
+            kvAllocatedBytes = arr.getOrElse(4) { 0L }
+        )
+    }
+
     override fun close() {
         if (isClosed.compareAndSet(false, true)) {
             synchronized(activeModels) {

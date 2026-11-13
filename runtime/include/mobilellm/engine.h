@@ -47,6 +47,9 @@ public:
     // Hardware Inspection & Telemetry
     virtual EngineMetrics get_metrics() const noexcept = 0;
     virtual HardwareProfile query_hardware() const noexcept = 0;
+    virtual ProcessMemoryTelemetry get_process_memory() const noexcept = 0;
+    virtual Result<ContextTelemetry> get_session_telemetry(SessionHandle session) const noexcept = 0;
+    virtual Status set_session_threads(SessionHandle session, uint32_t n_threads) noexcept = 0;
 };
 
 /**

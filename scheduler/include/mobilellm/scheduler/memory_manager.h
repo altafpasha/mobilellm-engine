@@ -29,6 +29,12 @@ struct MemoryInfo {
     uint64_t free_ram_bytes{0};
 };
 
+struct ProcessMemoryStats {
+    uint64_t current_rss_bytes{0};
+    uint64_t peak_rss_bytes{0};
+    uint64_t vmsize_bytes{0};
+};
+
 struct MemoryBudgetStatus {
     uint64_t total_system_ram_bytes{0};
     uint64_t total_budget_ceiling_bytes{0};
@@ -53,6 +59,11 @@ public:
      * @brief Queries physical system RAM from OS (/proc/meminfo on Linux/Android, sysctl on macOS).
      */
     static MemoryInfo query_system_memory() noexcept;
+
+    /**
+     * @brief Queries process virtual and resident memory (/proc/self/status on Linux/Android, mach task on macOS).
+     */
+    static ProcessMemoryStats query_process_memory() noexcept;
 
     /**
      * @brief Recalculates the active budget ceiling based on current system conditions.

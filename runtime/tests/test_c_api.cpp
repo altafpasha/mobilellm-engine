@@ -178,3 +178,36 @@ TEST(CApiTest, ConcurrentErrorsOnMultipleThreads) {
     }
 }
 
+TEST(CApiTest, QueryProcessMemoryTelemetry) {
+    mllm_engine_t engine = 0;
+    ASSERT_EQ(mllm_engine_create(&engine).code, 0);
+
+    mllm_process_memory_t mem;
+    mllm_status_t st = mllm_get_process_memory(engine, &mem);
+    EXPECT_EQ(st.code, 0);
+    EXPECT_GT(mem.current_rss_bytes, 0);
+    EXPECT_GT(mem.peak_rss_bytes, 0);
+    EXPECT_GE(mem.peak_rss_bytes, mem.current_rss_bytes);
+
+    // Invalid arguments
+    EXPECT_NE(mllm_get_process_memory(engine, nullptr).code, 0);
+    EXPECT_NE(mllm_get_process_memory(99999, &mem).code, 0);
+
+    EXPECT_EQ(mllm_engine_destroy(engine).code, 0);
+}
+
+TEST(CApiTest, SessionTelemetryAndSetThreadsValidation) {
+    mllm_engine_t engine = 0;
+    ASSERT_EQ(mllm_engine_create(&engine).code, 0);
+
+    mllm_context_telemetry_t ctx_telem;
+    // Session not found
+    EXPECT_NE(mllm_get_session_telemetry(engine, 999, &ctx_telem).code, 0);
+    EXPECT_NE(mllm_set_session_threads(engine, 999, 4).code, 0);
+
+    // Null pointer
+    EXPECT_NE(mllm_get_session_telemetry(engine, 999, nullptr).code, 0);
+
+    EXPECT_EQ(mllm_engine_destroy(engine).code, 0);
+}
+

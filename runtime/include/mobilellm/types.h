@@ -152,6 +152,11 @@ struct GenerationMetrics {
     double time_to_first_token_ms{0.0};
     double decode_tokens_per_second{0.0};
     double peak_memory_mb{0.0};
+    double prefill_tokens_per_second{0.0};
+    double prefill_time_ms{0.0};
+    double decode_time_ms{0.0};
+    double total_duration_ms{0.0};
+    uint32_t threads_used{4};
 };
 
 /**
@@ -167,6 +172,27 @@ struct HardwareProfile {
     bool vulkan_supported{false};
     std::string vulkan_device_name;
     bool npu_supported{false};
+};
+
+/**
+ * @brief Runtime process memory measurements.
+ */
+struct ProcessMemoryTelemetry {
+    uint64_t current_rss_bytes{0};
+    uint64_t peak_rss_bytes{0};
+    uint64_t vmsize_bytes{0};
+    uint64_t model_allocated_bytes{0};
+    uint64_t kv_allocated_bytes{0};
+};
+
+/**
+ * @brief Telemetry for a session's context window.
+ */
+struct ContextTelemetry {
+    uint32_t context_capacity{0};
+    uint32_t used_tokens{0};
+    uint32_t remaining_capacity{0};
+    bool is_available{false};
 };
 
 /**

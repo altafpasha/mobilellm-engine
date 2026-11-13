@@ -535,5 +535,49 @@ HardwareProfile EngineImpl::query_hardware() const noexcept {
     return hp;
 }
 
+ProcessMemoryTelemetry EngineImpl::get_process_memory() const noexcept {
+    ProcessMemoryTelemetry t;
+    auto proc = scheduler::MemoryBudgetManager::query_process_memory();
+    t.current_rss_bytes = proc.current_rss_bytes;
+    t.peak_rss_bytes = proc.peak_rss_bytes;
+    t.vmsize_bytes = proc.vmsize_bytes;
+    if (memory_mgr_) {
+        auto status = memory_mgr_->get_status();
+        t.model_allocated_bytes = status.model_weights_bytes;
+        t.kv_allocated_bytes = status.kv_cache_bytes;
+    }
+    return t;
+}
+
+Result<ContextTelemetry> EngineImpl::get_session_telemetry(SessionHandle session) const noexcept {
+    std::lock_guard<std::mutex> lock(engine_mutex_);
+    auto s_it = sessions_.find(session);
+    if (s_it == sessions_.end()) {
+        return Status::error(StatusCode::SESSION_NOT_FOUND, "Session not found");
+    }
+    if (!backend_) {
+        return Status::error(StatusCode::BACKEND_INITIALIZATION_FAILED, "Backend not available");
+    }
+    auto b_telem = backend_->get_session_telemetry(s_it->second.backend_handle);
+    ContextTelemetry ct;
+    ct.context_capacity = b_telem.context_capacity;
+    ct.used_tokens = b_telem.used_tokens;
+    ct.remaining_capacity = b_telem.remaining_capacity;
+    ct.is_available = b_telem.is_available;
+    return ct;
+}
+
+Status EngineImpl::set_session_threads(SessionHandle session, uint32_t n_threads) noexcept {
+    std::lock_guard<std::mutex> lock(engine_mutex_);
+    auto s_it = sessions_.find(session);
+    if (s_it == sessions_.end()) {
+        return Status::error(StatusCode::SESSION_NOT_FOUND, "Session not found");
+    }
+    if (!backend_) {
+        return Status::error(StatusCode::BACKEND_INITIALIZATION_FAILED, "Backend not available");
+    }
+    return backend_->set_threads(s_it->second.backend_handle, n_threads);
+}
+
 } // namespace mobilellm
 

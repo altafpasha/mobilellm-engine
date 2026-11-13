@@ -2,6 +2,7 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <sys/resource.h>
 
 #if defined(__APPLE__)
 #include <sys/types.h>
@@ -89,6 +90,57 @@ MemoryInfo MemoryBudgetManager::query_system_memory() noexcept {
     }
 
     return info;
+}
+
+ProcessMemoryStats MemoryBudgetManager::query_process_memory() noexcept {
+    ProcessMemoryStats stats;
+
+#if defined(__APPLE__)
+    struct mach_task_basic_info info;
+    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, reinterpret_cast<task_info_t>(&info), &count) == KERN_SUCCESS) {
+        stats.current_rss_bytes = info.resident_size;
+        stats.vmsize_bytes = info.virtual_size;
+    }
+    struct rusage usage;
+    if (getrusage(RUSAGE_SELF, &usage) == 0) {
+        // ru_maxrss is in bytes on macOS
+        stats.peak_rss_bytes = static_cast<uint64_t>(usage.ru_maxrss);
+    }
+#else
+    std::ifstream file("/proc/self/status");
+    if (file.is_open()) {
+        std::string line;
+        while (std::getline(file, line)) {
+            std::istringstream iss(line);
+            std::string key;
+            uint64_t value_kb = 0;
+            std::string unit;
+            if (iss >> key >> value_kb >> unit) {
+                if (key == "VmRSS:") {
+                    stats.current_rss_bytes = value_kb * 1024ULL;
+                } else if (key == "VmHWM:") {
+                    stats.peak_rss_bytes = value_kb * 1024ULL;
+                } else if (key == "VmSize:") {
+                    stats.vmsize_bytes = value_kb * 1024ULL;
+                }
+            }
+        }
+    }
+    if (stats.peak_rss_bytes == 0) {
+        struct rusage usage;
+        if (getrusage(RUSAGE_SELF, &usage) == 0) {
+            // ru_maxrss is in kilobytes on Linux/Android
+            stats.peak_rss_bytes = static_cast<uint64_t>(usage.ru_maxrss) * 1024ULL;
+        }
+    }
+#endif
+
+    if (stats.peak_rss_bytes < stats.current_rss_bytes) {
+        stats.peak_rss_bytes = stats.current_rss_bytes;
+    }
+
+    return stats;
 }
 
 Status MemoryBudgetManager::recalculate_budget(uint64_t custom_ceiling_bytes) noexcept {

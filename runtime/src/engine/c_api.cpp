@@ -260,6 +260,10 @@ mllm_status_t mllm_generate(
         c_metrics.ttft_ms = metrics.time_to_first_token_ms;
         c_metrics.tps = metrics.decode_tokens_per_second;
         c_metrics.peak_rss_mb = metrics.peak_memory_mb;
+        c_metrics.prompt_tps = metrics.prefill_tokens_per_second;
+        c_metrics.prefill_ms = metrics.prefill_time_ms;
+        c_metrics.decode_ms = metrics.decode_time_ms;
+        c_metrics.total_ms = metrics.total_duration_ms;
         complete_cb(c_st, &c_metrics, user_data);
     };
 
@@ -300,6 +304,51 @@ mllm_status_t mllm_detect_hardware(char* json_buffer, size_t max_len) {
     strncpy(json_buffer, info, max_len - 1);
     json_buffer[max_len - 1] = '\0';
     return c_error(0, "");
+}
+
+mllm_status_t mllm_get_process_memory(mllm_engine_t engine_id, mllm_process_memory_t* out_memory) {
+    if (!out_memory) {
+        return c_error(static_cast<int32_t>(mobilellm::StatusCode::INVALID_ARGUMENT), "out_memory is null");
+    }
+    auto* engine = get_engine(engine_id);
+    if (!engine) {
+        return c_error(static_cast<int32_t>(mobilellm::StatusCode::INVALID_ARGUMENT), "Invalid engine handle");
+    }
+    auto telem = engine->get_process_memory();
+    out_memory->current_rss_bytes = telem.current_rss_bytes;
+    out_memory->peak_rss_bytes = telem.peak_rss_bytes;
+    out_memory->vmsize_bytes = telem.vmsize_bytes;
+    out_memory->model_allocated_bytes = telem.model_allocated_bytes;
+    out_memory->kv_allocated_bytes = telem.kv_allocated_bytes;
+    return c_error(0, "");
+}
+
+mllm_status_t mllm_get_session_telemetry(mllm_engine_t engine_id, mllm_session_t session, mllm_context_telemetry_t* out_telemetry) {
+    if (!out_telemetry) {
+        return c_error(static_cast<int32_t>(mobilellm::StatusCode::INVALID_ARGUMENT), "out_telemetry is null");
+    }
+    auto* engine = get_engine(engine_id);
+    if (!engine) {
+        return c_error(static_cast<int32_t>(mobilellm::StatusCode::INVALID_ARGUMENT), "Invalid engine handle");
+    }
+    auto res = engine->get_session_telemetry(session);
+    if (!res.is_ok()) {
+        return to_c_status(res.status());
+    }
+    auto t = res.value();
+    out_telemetry->context_capacity = t.context_capacity;
+    out_telemetry->used_tokens = t.used_tokens;
+    out_telemetry->remaining_capacity = t.remaining_capacity;
+    out_telemetry->is_available = t.is_available;
+    return c_error(0, "");
+}
+
+mllm_status_t mllm_set_session_threads(mllm_engine_t engine_id, mllm_session_t session, uint32_t n_threads) {
+    auto* engine = get_engine(engine_id);
+    if (!engine) {
+        return c_error(static_cast<int32_t>(mobilellm::StatusCode::INVALID_ARGUMENT), "Invalid engine handle");
+    }
+    return to_c_status(engine->set_session_threads(session, n_threads));
 }
 
 const char* mllm_get_last_error(void) {

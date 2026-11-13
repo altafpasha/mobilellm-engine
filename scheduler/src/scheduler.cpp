@@ -196,6 +196,11 @@ uint32_t ContinuousBatchScheduler::step_batch() noexcept {
             }
 
             new_req->metrics.prompt_tokens = static_cast<uint32_t>(out_tokens.size());
+            new_req->metrics.prefill_time_ms = new_req->prefill_time_ms;
+            if (new_req->prefill_time_ms > 0.0 && new_req->metrics.prompt_tokens > 0) {
+                new_req->metrics.prefill_tokens_per_second =
+                    static_cast<double>(new_req->metrics.prompt_tokens) / (new_req->prefill_time_ms / 1000.0);
+            }
             new_req->decode_start_us = new_req->prefill_end_us;
             active_batch_.push_back(new_req);
         }
@@ -293,9 +298,19 @@ uint32_t ContinuousBatchScheduler::step_batch() noexcept {
                     double total_decode_sec = (req->decode_end_us >= req->decode_start_us)
                         ? static_cast<double>(req->decode_end_us - req->decode_start_us) / 1000000.0 : 0.0;
                     req->decode_time_ms = total_decode_sec * 1000.0;
+                    req->metrics.decode_time_ms = req->decode_time_ms;
                     if (total_decode_sec > 0.0 && req->generated_tokens > 0) {
                         req->metrics.decode_tokens_per_second = static_cast<double>(req->generated_tokens) / total_decode_sec;
                     }
+
+                    // Monotonic total duration from enqueue to decode completion
+                    double total_duration_sec = (now_us >= req->enqueue_time_us)
+                        ? static_cast<double>(now_us - req->enqueue_time_us) / 1000000.0 : 0.0;
+                    req->metrics.total_duration_ms = total_duration_sec * 1000.0;
+
+                    // Query actual process peak RSS
+                    auto mem_stats = MemoryBudgetManager::query_process_memory();
+                    req->metrics.peak_memory_mb = static_cast<double>(mem_stats.peak_rss_bytes) / (1024.0 * 1024.0);
 
                     session_mgr_->record_turn_completion(req->session_handle, req->generated_tokens);
 

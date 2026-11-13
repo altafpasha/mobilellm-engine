@@ -5,6 +5,8 @@ import android.app.Application
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
+import android.os.Build
+import android.os.PowerManager
 import android.provider.OpenableColumns
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -19,6 +21,7 @@ import ai.codesec.mobilellm.models.SamplingParams
 import ai.codesec.mobilellm.models.SessionConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -53,6 +56,19 @@ data class ChatMessage(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+data class BenchmarkRun(
+    val threads: Int,
+    val promptTokens: Int,
+    val completionTokens: Int,
+    val promptTokensPerSecond: Double,
+    val tokensPerSecond: Double,
+    val timeToFirstTokenMs: Double,
+    val totalDurationMs: Double,
+    val peakRssMb: Double,
+    val thermalStatusName: String,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 data class ChatUiState(
     val currentScreen: NexaScreen = NexaScreen.CHAT,
     val messages: List<ChatMessage> = emptyList(),
@@ -71,11 +87,24 @@ data class ChatUiState(
     val systemAvailRamMb: Long = 0L,
     val isLowMemory: Boolean = false,
     val nativeRssMb: Double = 0.0,
+    val nativePeakRssMb: Double = 0.0,
+    val nativeVmSizeMb: Double = 0.0,
+    val modelMemoryMb: Double = 0.0,
+    val kvCacheMemoryMb: Double = 0.0,
+    val contextCapacity: Int = 0,
+    val usedContextTokens: Int = 0,
+    val remainingContextTokens: Int = 0,
+    val isContextAvailable: Boolean = false,
+    val thermalStatus: Int = 0,
+    val thermalStatusName: String = "Normal (0)",
+    val isThermalThrottling: Boolean = false,
     val jvmHeapMb: Double = 0.0,
     val freeStorageBytes: Long = 0L,
     val modelsStorageBytes: Long = 0L,
     val errorMessage: String? = null,
-    val importProgress: Float? = null
+    val importProgress: Float? = null,
+    val benchmarkHistory: List<BenchmarkRun> = emptyList(),
+    val isBenchmarking: Boolean = false
 )
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
@@ -86,6 +115,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private var generationJob: Job? = null
     private var loadModelJob: Job? = null
     private val loadMutex = Mutex()
+    private var thermalListener: PowerManager.OnThermalStatusChangedListener? = null
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
@@ -103,6 +133,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         get() = modelsDirs.first()
 
     init {
+        initThermalMonitoring(application)
         viewModelScope.launch {
             try {
                 client.initialize()
@@ -121,6 +152,54 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 refreshSystemStats()
                 refreshModelsList()
             }
+        }
+    }
+
+    private fun initThermalMonitoring(app: Application) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val powerManager = app.getSystemService(Context.POWER_SERVICE) as? PowerManager
+            if (powerManager != null) {
+                try {
+                    val initialStatus = powerManager.currentThermalStatus
+                    updateThermalStatus(initialStatus)
+                    val listener = PowerManager.OnThermalStatusChangedListener { status ->
+                        updateThermalStatus(status)
+                    }
+                    powerManager.addThermalStatusListener(app.mainExecutor, listener)
+                    thermalListener = listener
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not initialize thermal status listener: ${e.message}")
+                }
+            }
+        } else {
+            _uiState.update {
+                it.copy(
+                    thermalStatus = 0,
+                    thermalStatusName = "Unsupported (< API 29)",
+                    isThermalThrottling = false
+                )
+            }
+        }
+    }
+
+    private fun updateThermalStatus(status: Int) {
+        val name = when (status) {
+            PowerManager.THERMAL_STATUS_NONE -> "Normal (0 - None)"
+            PowerManager.THERMAL_STATUS_LIGHT -> "Light (1 - Light Throttling)"
+            PowerManager.THERMAL_STATUS_MODERATE -> "Moderate (2 - Moderate Throttling)"
+            PowerManager.THERMAL_STATUS_SEVERE -> "Severe (3 - Performance Impacted)"
+            PowerManager.THERMAL_STATUS_CRITICAL -> "Critical (4 - Significant Throttling)"
+            PowerManager.THERMAL_STATUS_EMERGENCY -> "Emergency (5 - Shutdown Imminent)"
+            PowerManager.THERMAL_STATUS_SHUTDOWN -> "Shutdown (6 - Thermal Shutdown)"
+            else -> "Status $status"
+        }
+        val isThrottling = status >= PowerManager.THERMAL_STATUS_MODERATE
+        _uiState.update {
+            it.copy(
+                thermalStatus = status,
+                thermalStatusName = name,
+                isThermalThrottling = isThrottling
+            )
         }
     }
 
@@ -147,12 +226,33 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val freeSpace = modelsDir.freeSpace
         val modelsSize = _uiState.value.availableModels.sumOf { it.length() }
 
+        val procMem = try {
+            client.getProcessMemory()
+        } catch (e: Exception) {
+            MobileLLMClient.ProcessMemorySnapshot()
+        }
+
+        val contextTelem = try {
+            activeSession?.getContextTelemetry()
+        } catch (e: Exception) {
+            null
+        }
+
         _uiState.update {
             it.copy(
                 systemTotalRamMb = totalRamMb,
                 systemAvailRamMb = availRamMb,
                 isLowMemory = lowMem,
                 jvmHeapMb = jvmHeapMb,
+                nativeRssMb = procMem.currentRssMb,
+                nativePeakRssMb = procMem.peakRssMb,
+                nativeVmSizeMb = procMem.vmSizeMb,
+                modelMemoryMb = procMem.modelAllocatedMb,
+                kvCacheMemoryMb = procMem.kvAllocatedMb,
+                contextCapacity = contextTelem?.contextCapacity ?: it.contextCapacity,
+                usedContextTokens = contextTelem?.usedTokens ?: it.usedContextTokens,
+                remainingContextTokens = contextTelem?.remainingCapacity ?: it.remainingContextTokens,
+                isContextAvailable = contextTelem?.isAvailable ?: it.isContextAvailable,
                 freeStorageBytes = freeSpace,
                 modelsStorageBytes = modelsSize
             )
@@ -452,14 +552,73 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateThreads(threads: Int) {
-        _uiState.update { it.copy(threadCount = threads) }
-        // If a model is currently loaded, reload it with the new thread count
-        val loadedName = _uiState.value.loadedModelName
-        if (loadedName != null && _uiState.value.isModelLoaded) {
-            val file = File(modelsDir, loadedName)
-            if (file.exists()) {
-                loadModel(file)
+        val maxCores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        val clamped = threads.coerceIn(1, maxCores)
+        _uiState.update { it.copy(threadCount = clamped) }
+        viewModelScope.launch(Dispatchers.Default) {
+            val session = activeSession
+            if (session != null) {
+                val success = session.setThreads(clamped)
+                Log.d(TAG, "Dynamically updated CPU threads to $clamped (result: $success)")
             }
+        }
+    }
+
+    fun runBenchmark() {
+        val session = activeSession
+        if (session == null || _uiState.value.isGenerating || _uiState.value.isBenchmarking) {
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.Default) {
+            _uiState.update { it.copy(isBenchmarking = true, errorMessage = null) }
+            val maxCores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+            val threadConfigs = listOf(2, 4, 6, 8).filter { it <= maxCores }
+                .ifEmpty { listOf(maxCores) }
+            val benchmarkPrompt = "Explain the fundamental principles of artificial intelligence and machine learning in simple, clear terms for mobile engineers."
+
+            for (threads in threadConfigs) {
+                updateThreads(threads)
+                delay(300) // Brief settle time
+
+                var receivedMetrics: GenerationMetrics? = null
+                try {
+                    val sampling = SamplingParams(maxTokens = 35, temperature = 0.0f)
+                    session.generate(
+                        prompt = benchmarkPrompt,
+                        params = sampling,
+                        onMetrics = { m -> receivedMetrics = m }
+                    ).collect {
+                        // Consume stream
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Benchmark failed for thread count $threads: ${e.message}")
+                }
+
+                val finalMetrics = receivedMetrics
+                if (finalMetrics != null) {
+                    val run = BenchmarkRun(
+                        threads = threads,
+                        promptTokens = finalMetrics.promptTokens,
+                        completionTokens = finalMetrics.completionTokens,
+                        promptTokensPerSecond = finalMetrics.promptTokensPerSecond,
+                        tokensPerSecond = finalMetrics.tokensPerSecond,
+                        timeToFirstTokenMs = finalMetrics.timeToFirstTokenMs,
+                        totalDurationMs = finalMetrics.totalDurationMs,
+                        peakRssMb = finalMetrics.peakRssMb,
+                        thermalStatusName = _uiState.value.thermalStatusName
+                    )
+                    _uiState.update { state ->
+                        state.copy(
+                            benchmarkHistory = state.benchmarkHistory + run,
+                            lastMetrics = finalMetrics
+                        )
+                    }
+                }
+            }
+
+            _uiState.update { it.copy(isBenchmarking = false) }
+            refreshSystemStats()
         }
     }
 
@@ -474,6 +633,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         stopGeneration()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && thermalListener != null) {
+            val powerManager = getApplication<Application>().getSystemService(Context.POWER_SERVICE) as? PowerManager
+            try {
+                thermalListener?.let { powerManager?.removeThermalStatusListener(it) }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed removing thermal listener: ${e.message}")
+            }
+            thermalListener = null
+        }
         activeSession?.close()
     }
 }

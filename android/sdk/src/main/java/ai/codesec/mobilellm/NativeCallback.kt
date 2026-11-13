@@ -20,6 +20,27 @@ interface NativeCallback {
         ttftMs: Double,
         tps: Double,
         peakRssMb: Double
-    )
+    ) {
+        onCompleteDetailed(code, message, promptTokens, completionTokens, ttftMs, tps, peakRssMb, 0.0, 0.0, 0.0, 0.0)
+    }
+
+    /**
+     * Signals completion of generation with full detailed telemetry including prefill & duration.
+     */
+    fun onCompleteDetailed(
+        code: Int,
+        message: String,
+        promptTokens: Int,
+        completionTokens: Int,
+        ttftMs: Double,
+        tps: Double,
+        peakRssMb: Double,
+        promptTps: Double,
+        prefillMs: Double,
+        decodeMs: Double,
+        totalMs: Double
+    ) {
+        onComplete(code, message, promptTokens, completionTokens, ttftMs, tps, peakRssMb)
+    }
 }
 

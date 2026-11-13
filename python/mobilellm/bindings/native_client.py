@@ -91,6 +91,10 @@ class _CMllmMetrics(Structure):
         ("ttft_ms", c_double),
         ("tps", c_double),
         ("peak_rss_mb", c_double),
+        ("prompt_tps", c_double),
+        ("prefill_ms", c_double),
+        ("decode_ms", c_double),
+        ("total_ms", c_double),
     ]
 
 
@@ -220,6 +224,10 @@ class NativeSession:
                         time_to_first_token_ms=m.ttft_ms,
                         tokens_per_second=m.tps,
                         peak_rss_mb=m.peak_rss_mb,
+                        prompt_tokens_per_second=getattr(m, "prompt_tps", 0.0),
+                        prefill_time_ms=getattr(m, "prefill_ms", 0.0),
+                        decode_time_ms=getattr(m, "decode_ms", 0.0),
+                        total_duration_ms=getattr(m, "total_ms", 0.0),
                     )
                     if on_metrics and metrics_holder[0]:
                         on_metrics(metrics_holder[0])
