@@ -183,3 +183,4 @@ Every identified bug must follow a strict **Zero-Regression Lifecycle**:
 3. **Remediation Implementation:** Apply the minimal, non-invasive architectural fix.
 4. **Regression Verification:** Run the full test suite under sanitizers to confirm the defect is resolved with zero side effects.
 5. **Permanent CI Inclusion:** The test becomes a permanent regression barrier in the test suite.
+
