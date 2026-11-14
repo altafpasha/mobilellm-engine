@@ -166,6 +166,7 @@ uint32_t ContinuousBatchScheduler::step_batch() noexcept {
             new_req->dequeue_time_us = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(now).count());
             new_req->queue_wait_time_ms = (new_req->dequeue_time_us >= new_req->enqueue_time_us)
                 ? static_cast<double>(new_req->dequeue_time_us - new_req->enqueue_time_us) / 1000.0 : 0.0;
+            new_req->metrics.queue_wait_time_ms = new_req->queue_wait_time_ms;
 
             // Context preparation
             uint32_t prompt_tokens_est = static_cast<uint32_t>(new_req->prompt.size() / 3 + 4);
@@ -235,7 +236,14 @@ uint32_t ContinuousBatchScheduler::step_batch() noexcept {
             continue;
         }
 
+        auto t_sample_start = std::chrono::steady_clock::now();
+        if (!req->first_token_emitted) {
+            req->first_token_sample_start_us = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(t_sample_start.time_since_epoch()).count());
+        }
+
         auto sample_res = backend_->sample_next_token(req->backend_session_handle, req->sampling);
+        auto t_sample_end = std::chrono::steady_clock::now();
+
         if (!sample_res.is_ok()) {
             requests_to_retire.push_back(req->request_id);
             retirement_statuses[req->request_id] = sample_res.status();
@@ -253,12 +261,11 @@ uint32_t ContinuousBatchScheduler::step_batch() noexcept {
         req->generated_tokens++;
         req->metrics.completion_tokens = req->generated_tokens;
 
-        auto now_steady = std::chrono::steady_clock::now();
         if (!req->first_token_emitted) {
-            req->first_token_emitted = true;
-            uint64_t now_us = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(now_steady.time_since_epoch()).count());
-            req->metrics.time_to_first_token_ms = (now_us >= req->enqueue_time_us)
-                ? static_cast<double>(now_us - req->enqueue_time_us) / 1000.0 : 0.0;
+            req->first_token_sample_end_us = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(t_sample_end.time_since_epoch()).count());
+            req->first_token_sampling_time_ms = (req->first_token_sample_end_us >= req->first_token_sample_start_us)
+                ? static_cast<double>(req->first_token_sample_end_us - req->first_token_sample_start_us) / 1000.0 : 0.0;
+            req->pure_inference_ttft_ms = req->prefill_time_ms + req->first_token_sampling_time_ms;
         }
 
         // Invoke token callback WITHOUT holding batch_mutex_
@@ -266,6 +273,20 @@ uint32_t ContinuousBatchScheduler::step_batch() noexcept {
         if (req->token_cb) {
             TokenChunk chunk{piece, tok_id, false, 0.0f};
             keep_going = req->token_cb(chunk);
+        }
+
+        if (!req->first_token_emitted) {
+            req->first_token_emitted = true;
+            auto t_cb_end = std::chrono::steady_clock::now();
+            req->first_token_cb_end_us = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(t_cb_end.time_since_epoch()).count());
+            req->end_to_end_ttft_ms = (req->first_token_cb_end_us >= req->enqueue_time_us)
+                ? static_cast<double>(req->first_token_cb_end_us - req->enqueue_time_us) / 1000.0 : 0.0;
+
+            req->metrics.queue_wait_time_ms = req->queue_wait_time_ms;
+            req->metrics.first_token_sampling_time_ms = req->first_token_sampling_time_ms;
+            req->metrics.pure_inference_ttft_ms = req->pure_inference_ttft_ms;
+            req->metrics.end_to_end_ttft_ms = req->end_to_end_ttft_ms;
+            req->metrics.time_to_first_token_ms = req->pure_inference_ttft_ms;
         }
 
         if (!keep_going) {

@@ -104,3 +104,4 @@ To run on a connected Android ARM64 device via ADB:
    ```bash
    adb pull /data/local/tmp/android_t4.json ./benchmarks/
    ```
+

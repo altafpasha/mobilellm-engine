@@ -59,6 +59,7 @@ private:
         std::vector<int32_t> generated_tokens;
         uint32_t step{0};
         std::unique_ptr<Sampler> sampler;
+        std::vector<float> reusable_logits; // PERF-03: persistent reusable logits buffer for mock
     };
 
     std::mutex mutex_;

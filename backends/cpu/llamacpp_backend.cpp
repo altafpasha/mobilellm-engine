@@ -15,6 +15,7 @@
 #include "llama.h"
 #include <vector>
 #include <string>
+#include <cstring>
 
 static std::mutex g_llama_log_mutex;
 static std::string g_llama_last_error;
@@ -188,6 +189,14 @@ Result<BackendSessionHandle> LlamaCppBackend::create_session(
     sess->raw_ctx = ctx;
     sess->sampler = std::make_unique<Sampler>(42 + static_cast<uint64_t>(s_handle));
 
+    // PERF-03: Pre-allocate reusable logits buffer once based on model vocabulary
+    try {
+        sess->reusable_logits.resize(it->second->n_vocab, 0.0f);
+    } catch (const std::bad_alloc&) {
+        llama_free(ctx);
+        return Status::error(StatusCode::OUT_OF_MEMORY, "Failed to allocate reusable logits buffer");
+    }
+
     sessions_[s_handle] = sess;
     return s_handle;
 }
@@ -206,6 +215,8 @@ Status LlamaCppBackend::destroy_session(BackendSessionHandle session) noexcept {
 
     if (sess) {
         std::lock_guard<std::mutex> s_lock(sess->session_mutex);
+        sess->reusable_logits.clear();
+        sess->reusable_logits.shrink_to_fit();
         if (sess->raw_ctx) {
             llama_free(sess->raw_ctx);
             sess->raw_ctx = nullptr;
@@ -315,8 +326,18 @@ Result<int32_t> LlamaCppBackend::sample_next_token(
         return Status::error(StatusCode::BACKEND_EXECUTION_ERROR, "Failed to obtain logits from context");
     }
 
-    std::vector<float> logits(raw_logits, raw_logits + mdl->n_vocab);
-    int32_t token = sess->sampler ? sess->sampler->sample(logits, sess->history_tokens, params)
+    // PERF-03: Reuse pre-allocated session logits buffer; resize safely only if vocabulary metadata changed
+    if (sess->reusable_logits.size() != mdl->n_vocab) {
+        try {
+            sess->reusable_logits.resize(mdl->n_vocab, 0.0f);
+        } catch (const std::bad_alloc&) {
+            return Status::error(StatusCode::OUT_OF_MEMORY, "Failed to resize reusable logits buffer");
+        }
+    }
+
+    std::memcpy(sess->reusable_logits.data(), raw_logits, mdl->n_vocab * sizeof(float));
+
+    int32_t token = sess->sampler ? sess->sampler->sample(sess->reusable_logits, sess->history_tokens, params)
                                   : 0;
 
     // Step forward by decoding the sampled token

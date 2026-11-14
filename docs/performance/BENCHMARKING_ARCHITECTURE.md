@@ -52,14 +52,58 @@ sequenceDiagram
     Sched->>Client: complete_cb(final_metrics)
 ```
 
-### 2.1 Time to First Token (TTFT)
-MobileLLM distinguishes two distinct TTFT definitions:
-1. **Pure Inference TTFT ($\text{TTFT}_{\text{pure}}$):**
+### 2.1 Decomposed Time to First Token (TTFT) Taxonomy (PERF-01)
+MobileLLM Engine decomposes the prompt-to-first-token pipeline into 6 explicit timestamps and 5 deterministic duration metrics:
+
+#### Precise Timing Boundaries:
+1. $t_{\text{enqueue}}$: Request submitted via `IEngine::generate_async()` and pushed to `RequestQueue`.
+2. $t_{\text{dequeue}}$: Request popped from `RequestQueue` by scheduler worker during `step_batch()`.
+3. $t_{\text{prefill\_start}}$: Prompt tokenization and layer evaluation initiated via `IBackend::evaluate_prompt()`.
+4. $t_{\text{prefill\_end}}$: Backend finishes prompt processing and logits are computed.
+5. $t_{\text{sample}(1)}$: First output token sampled from logits via `IBackend::sample_next_token()`.
+6. $t_{\text{callback}(1)}$: First token delivered to caller's `TokenCallback` function.
+
+#### Decomposed Mathematical Metrics:
+1. **Queue Wait Time ($T_{\text{queue\_wait}}$):**
+   $$T_{\text{queue\_wait}} = t_{\text{dequeue}} - t_{\text{enqueue}}$$
+   Isolates concurrency bottlenecks, queue prioritization, and scheduler worker wake latency.
+2. **Prefill Processing Time ($T_{\text{prefill}}$):**
+   $$T_{\text{prefill}} = t_{\text{prefill\_end}} - t_{\text{prefill\_start}}$$
+   Pure prompt tokenization and matrix-matrix multiply compute time.
+3. **First-Token Sampling Time ($T_{\text{sample}(1)}$):**
+   $$T_{\text{sample}(1)} = t_{\text{sample}(1)} - t_{\text{prefill\_end}}$$
+   Logits transfer, repetition penalty calculation, softmax, and sampling strategy execution for token 1.
+4. **Pure Inference TTFT ($\text{TTFT}_{\text{pure}}$):**
    $$\text{TTFT}_{\text{pure}} = T_{\text{prefill}} + T_{\text{sample}(1)}$$
-   Measures raw hardware compute latency: time required by the backend to tokenize the prompt, evaluate all prompt layers, and sample the first output token.
-2. **End-to-End User TTFT ($\text{TTFT}_{\text{e2e}}$):**
-   $$\text{TTFT}_{\text{e2e}} = T_{\text{queue\_wait}} + \text{TTFT}_{\text{pure}} + T_{\text{dispatch}}$$
-   Measures perceived user responsiveness from the instant `generate_async()` is invoked until the first token callback executes.
+   Strictly isolates hardware inference latency without client delivery or queue queuing distortion.
+5. **End-to-End User TTFT ($\text{TTFT}_{\text{e2e}}$):**
+   $$\text{TTFT}_{\text{e2e}} = t_{\text{callback}(1)} - t_{\text{enqueue}} = T_{\text{queue\_wait}} + \text{TTFT}_{\text{pure}} + T_{\text{dispatch\_overhead}}$$
+   Measures true user-perceived responsiveness from API dispatch to client callback execution.
+
+#### Public API & ABI Preservation:
+- In `GenerationMetrics` (C++): all 5 decomposed fields are available (`queue_wait_time_ms`, `prefill_time_ms`, `first_token_sampling_time_ms`, `pure_inference_ttft_ms`, `end_to_end_ttft_ms`).
+- In `mllm_metrics_t` (C API) and Python ctypes (`_CMllmMetrics`): the frozen struct layout is 100% preserved. `ttft_ms` maps directly to $\text{TTFT}_{\text{pure}}$ to maintain ABI compatibility.
+
+---
+
+### 2.2 Persistent Reusable Logits Buffer Architecture (PERF-03)
+Prior to Stage 2 remediation, each token generation step in `LlamaCppBackend::sample_next_token()` allocated an ephemeral `std::vector<float>(n_vocab)` on the heap. For models with 128,256 vocabulary entries (such as Llama 3.2), this resulted in a **512 KB heap allocation and deallocation for every single generated token**, triggering severe mobile heap fragmentation and cache churn.
+
+#### Remediation Design:
+1. **Session Ownership:** A persistent `reusable_logits` vector is owned directly by `SessionContext`.
+2. **Allocation Lifecycle:**
+   - Pre-allocated once during `create_session()` sized to `mdl->n_vocab`.
+   - Verified before sampling; safely resized if model vocabulary metadata differs.
+   - Cleared and deallocated with `shrink_to_fit()` upon `destroy_session()`.
+3. **Zero-Copy / In-Place Transfer:**
+   - `std::memcpy(sess->reusable_logits.data(), raw_logits, mdl->n_vocab * sizeof(float))` replaces vector constructor allocations.
+4. **Concurrency Safety:**
+   - Protected by per-session `sess->session_mutex`.
+   - Independent sessions maintain separate heap buffers without cross-talk or lock contention.
+5. **Remaining Sampler Allocations:**
+   - `Sampler::apply_repetition_penalty` constructs `std::unordered_set<int32_t>` over recent history if penalty $> 1.0$.
+   - Non-greedy sampling (`temperature > 0.0`) allocates a `candidates` vector sized to top tokens.
+   - Greedy sampling (`temperature <= 0.0`) performs zero additional heap allocations.
 
 ### 2.2 Prefill Throughput
 Prompt processing throughput is calculated strictly over the prefill evaluation window:
@@ -161,3 +205,4 @@ Peak Process RSS             | 175.12 MB    | 174.43 MB    | -0.39%       | NEUT
 Model Load Duration          | 83.73 ms     | 170.24 ms    | +103.33%     | FAILED    
 ========================================================================================
 ```
+

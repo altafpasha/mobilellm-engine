@@ -32,11 +32,17 @@ struct QueuedRequest {
     uint64_t dequeue_time_us{0};
     uint64_t prefill_start_us{0};
     uint64_t prefill_end_us{0};
+    uint64_t first_token_sample_start_us{0};
+    uint64_t first_token_sample_end_us{0};
+    uint64_t first_token_cb_end_us{0};
     uint64_t decode_start_us{0};
     uint64_t decode_end_us{0};
 
     double queue_wait_time_ms{0.0};
     double prefill_time_ms{0.0};
+    double first_token_sampling_time_ms{0.0};
+    double pure_inference_ttft_ms{0.0};
+    double end_to_end_ttft_ms{0.0};
     double decode_time_ms{0.0};
 
     std::atomic<bool> is_cancelled{false};

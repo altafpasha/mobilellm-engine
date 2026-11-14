@@ -41,8 +41,10 @@ struct IterationMetrics {
     bool is_warmup{false};
     uint32_t prompt_tokens{0};
     uint32_t completion_tokens{0};
+    double queue_wait_time_ms{0.0};
     double prefill_time_ms{0.0};
     double prefill_tokens_per_sec{0.0};
+    double first_token_sampling_time_ms{0.0};
     double decode_time_ms{0.0};
     double decode_tokens_per_sec{0.0};
     double ttft_pure_ms{0.0};
@@ -335,19 +337,18 @@ int main(int argc, char* argv[]) {
         // Process Timing Metrics
         iter.prompt_tokens = runtime_metrics.prompt_tokens;
         iter.completion_tokens = runtime_metrics.completion_tokens;
+        iter.queue_wait_time_ms = runtime_metrics.queue_wait_time_ms;
         iter.prefill_time_ms = runtime_metrics.prefill_time_ms;
         iter.prefill_tokens_per_sec = runtime_metrics.prefill_tokens_per_second;
+        iter.first_token_sampling_time_ms = runtime_metrics.first_token_sampling_time_ms;
         iter.decode_time_ms = runtime_metrics.decode_time_ms;
         iter.decode_tokens_per_sec = runtime_metrics.decode_tokens_per_second;
+        iter.ttft_pure_ms = runtime_metrics.pure_inference_ttft_ms > 0.0 ? runtime_metrics.pure_inference_ttft_ms : runtime_metrics.time_to_first_token_ms;
+        iter.ttft_e2e_ms = runtime_metrics.end_to_end_ttft_ms > 0.0 ? runtime_metrics.end_to_end_ttft_ms : std::chrono::duration<double, std::milli>(token_arrival_times.empty() ? t_complete - t_enqueue : token_arrival_times.front() - t_enqueue).count();
         iter.total_duration_ms = std::chrono::duration<double, std::milli>(t_complete - t_enqueue).count();
         iter.peak_rss_mb = runtime_metrics.peak_memory_mb;
 
         if (!token_arrival_times.empty()) {
-            // TTFT: Enqueue to first token
-            iter.ttft_e2e_ms = std::chrono::duration<double, std::milli>(token_arrival_times.front() - t_enqueue).count();
-            // Pure TTFT: prefill time + first token decode interval
-            iter.ttft_pure_ms = runtime_metrics.time_to_first_token_ms;
-
             // Per-token decode latencies for tokens 2..N
             std::vector<double> latencies;
             for (size_t i = 1; i < token_arrival_times.size(); ++i) {
@@ -473,8 +474,10 @@ int main(int argc, char* argv[]) {
                    << "      \"is_warmup\": " << (it.is_warmup ? "true" : "false") << ",\n"
                    << "      \"prompt_tokens\": " << it.prompt_tokens << ",\n"
                    << "      \"completion_tokens\": " << it.completion_tokens << ",\n"
+                   << "      \"queue_wait_time_ms\": " << it.queue_wait_time_ms << ",\n"
                    << "      \"prefill_time_ms\": " << it.prefill_time_ms << ",\n"
                    << "      \"prefill_tps\": " << it.prefill_tokens_per_sec << ",\n"
+                   << "      \"first_token_sampling_time_ms\": " << it.first_token_sampling_time_ms << ",\n"
                    << "      \"decode_time_ms\": " << it.decode_time_ms << ",\n"
                    << "      \"decode_tps\": " << it.decode_tokens_per_sec << ",\n"
                    << "      \"ttft_pure_ms\": " << it.ttft_pure_ms << ",\n"
@@ -496,3 +499,4 @@ int main(int argc, char* argv[]) {
     engine->shutdown();
     return 0;
 }
+

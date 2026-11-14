@@ -64,6 +64,7 @@ private:
         std::vector<int32_t> history_tokens;
         int32_t last_n_tokens{0};
         std::unique_ptr<Sampler> sampler;
+        std::vector<float> reusable_logits; // PERF-03: persistent reusable logits buffer per session
         mutable std::mutex session_mutex;
     };
 

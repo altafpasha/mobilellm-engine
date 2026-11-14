@@ -93,6 +93,7 @@ if (MOBILELLM_BUILD_TESTS)
         tests/test_c_api.cpp
         tests/test_scheduler_integration.cpp
         tests/test_milestone2_execution.cpp
+        tests/test_perf_remediation.cpp
     )
 
     add_executable(mobilellm_tests ${MOBILELLM_TEST_SOURCES})

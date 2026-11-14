@@ -4,8 +4,8 @@
 > **Reviewer:** Agent 0 (Lead Architect)  
 > **Date:** November 14, 2026  
 > **Branch:** `feature/agent-8-performance-benchmarking`  
-> **Scope:** Runtime Profiling, Benchmark Infrastructure, Measurement Audit, Thread Scaling, Memory Footprint  
-> **Status:** Stage 1 Performance Audit Complete  
+> **Scope:** Runtime Profiling, Benchmark Infrastructure, Measurement Audit, Thread Scaling, Memory Footprint, Targeted Remediation (PERF-01, PERF-03)  
+> **Status:** Stage 1 Audit & Stage 2 Targeted Remediation Complete  
 
 ---
 
@@ -119,8 +119,15 @@ Peak Process RSS             891.12 MB                891.12       891.12       
 
 ---
 
-## 6. Stage 1 Sign-Off & Recommendations
+## 6. Stage 2 Targeted Remediation Sign-Off
 
-1. **Keep Branch Isolated:** Maintain all benchmark tooling and reports on `feature/agent-8-performance-benchmarking`.
-2. **Present Audit to Lead Architect (Agent 0):** Stop before applying broad code changes to `runtime/src/engine/engine_impl.cpp` or `backends/cpu/llamacpp_backend.cpp`.
-3. **Stage 2 Approval Request:** Request authorization to remediate PERF-01 (decomposed TTFT fields in telemetry) and PERF-03 (pre-allocated logits buffer in `sample_next_token`).
+Agent 8 has completed Stage 2 targeted remediations authorized by Lead Architect (Agent 0):
+- **PERF-01 (Decomposed TTFT Timing Boundaries):** Implemented in `scheduler/src/scheduler.cpp`, `scheduler/include/mobilellm/scheduler/request_queue.h`, and `runtime/include/mobilellm/types.h`. All 5 decomposed timing metrics verified mathematically and empirically. Public C API and Python ABI preserved 100%.
+- **PERF-03 (Persistent Reusable Logits Buffer):** Implemented in `backends/cpu/llamacpp_backend.h/.cpp` and `backends/mock/mock_backend.h/.cpp`. Eliminates 512 KB per-token heap allocation in `sample_next_token()` while strictly isolating concurrent session buffers.
+- **Verification Evidence:**
+  - 83/83 C++ unit tests passed (`mobilellm_tests`).
+  - 83/83 ThreadSanitizer tests passed with zero data races (`mobilellm_scheduler_tests` & `mobilellm_tests`).
+  - 34 passed, 1 skipped Python test suite.
+  - 30-iteration pre- and post-remediation benchmarks executed for SmolLM2-135M and Llama-3.2-1B.
+- **Full Stage 2 Remediation Documentation:** See [`reports/AGENT_8_STAGE_2_REMEDIATION_REPORT.md`](file:///Users/Apple/Developer/ai-apps/MobileLLM/reports/AGENT_8_STAGE_2_REMEDIATION_REPORT.md).
+

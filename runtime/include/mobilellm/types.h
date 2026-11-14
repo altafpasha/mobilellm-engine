@@ -157,6 +157,12 @@ struct GenerationMetrics {
     double decode_time_ms{0.0};
     double total_duration_ms{0.0};
     uint32_t threads_used{4};
+
+    // --- Decomposed TTFT and Timing Metrics (PERF-01) ---
+    double queue_wait_time_ms{0.0};
+    double first_token_sampling_time_ms{0.0};
+    double pure_inference_ttft_ms{0.0};
+    double end_to_end_ttft_ms{0.0};
 };
 
 /**

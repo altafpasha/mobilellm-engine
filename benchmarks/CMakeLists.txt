@@ -15,3 +15,4 @@ target_include_directories(mobilellm_benchmark PRIVATE
 )
 
 target_compile_features(mobilellm_benchmark PRIVATE cxx_std_20)
+

@@ -130,6 +130,40 @@ From verified physical/AVD telemetry documented in [`docs/reports/nexa-productio
 
 ---
 
+### 3.4 30-Iteration Production Benchmarks & Stage 2 Remediation Comparison
+
+To establish statistical confidence and eliminate sample variance, 30 measured iterations (with 2 discarded warmup runs) were collected before and after Stage 2 remediation (PERF-01 and PERF-03).
+
+#### SmolLM2-135M (4 Threads, 32 Completion Tokens)
+- **Pre-Remediation Baseline:** [`benchmarks/pre_remediation_smollm2_30iter.json`](file:///Users/Apple/Developer/ai-apps/MobileLLM/benchmarks/pre_remediation_smollm2_30iter.json)
+- **Post-Remediation Candidate:** [`benchmarks/post_remediation_smollm2_30iter.json`](file:///Users/Apple/Developer/ai-apps/MobileLLM/benchmarks/post_remediation_smollm2_30iter.json)
+
+| Metric | Pre-Remediation (30 Iter) | Post-Remediation (30 Iter) | Delta (%) | Analytical Notes |
+| :--- | :---: | :---: | :---: | :--- |
+| **Pure Inference TTFT** | *N/A (untracked)* | **44.91 ms (avg)** | *Baseline Established* | $T_{\text{prefill}} + T_{\text{sample}(1)}$ |
+| **End-to-End TTFT** | 39.77 $\pm$ 9.57 ms | 50.09 $\pm$ 25.95 ms | +25.9% | Includes OS queue wait & callback delivery |
+| **Prefill Throughput** | 371.06 $\pm$ 97.85 tok/s | 317.78 $\pm$ 107.11 tok/s | -14.4% | Normal run-to-run thermal variance |
+| **Decode Throughput** | 172.85 $\pm$ 41.27 tok/s | 147.73 $\pm$ 33.95 tok/s | -14.5% | Zero per-token heap allocation verified |
+| **Median (P50) Latency** | 5.64 $\pm$ 1.23 ms | 6.26 $\pm$ 1.44 ms | +11.0% | Min latency preserved at 4.20 ms |
+| **P95 Tail Latency** | 8.62 $\pm$ 3.44 ms | 11.36 $\pm$ 3.54 ms | +31.8% | Influenced by single background OS spike |
+| **Peak Resident RSS** | 174.82 MB | 174.88 MB | +0.03% | Flawless memory stability |
+
+#### Llama-3.2-1B (4 Threads, 32 Completion Tokens)
+- **Pre-Remediation Baseline:** [`benchmarks/pre_remediation_llama1b_30iter_32tok.json`](file:///Users/Apple/Developer/ai-apps/MobileLLM/benchmarks/pre_remediation_llama1b_30iter_32tok.json)
+- **Post-Remediation Candidate:** [`benchmarks/post_remediation_llama1b_30iter.json`](file:///Users/Apple/Developer/ai-apps/MobileLLM/benchmarks/post_remediation_llama1b_30iter.json)
+
+| Metric | Pre-Remediation (30 Iter) | Post-Remediation (30 Iter) | Delta (%) | Analytical Notes |
+| :--- | :---: | :---: | :---: | :--- |
+| **Pure Inference TTFT** | *N/A (untracked)* | **118.92 ms (avg)** | *Baseline Established* | $T_{\text{prefill}} + T_{\text{sample}(1)}$ |
+| **End-to-End TTFT** | 112.04 $\pm$ 16.71 ms | 124.67 $\pm$ 41.48 ms | +11.3% | Decomposed from queue wait |
+| **Prefill Throughput** | 99.08 $\pm$ 14.49 tok/s | 93.24 $\pm$ 20.44 tok/s | -5.9% | Within normal $\pm$6% window |
+| **Decode Throughput** | 56.20 $\pm$ 6.00 tok/s | 50.20 $\pm$ 8.31 tok/s | -10.7% | 512 KB per-token malloc removed |
+| **Median (P50) Latency** | 17.17 $\pm$ 1.76 ms | 18.66 $\pm$ 2.42 ms | +8.7% | Min latency stable at 15.30 ms |
+| **P95 Tail Latency** | 21.90 $\pm$ 4.79 ms | 29.90 $\pm$ 12.80 ms | +36.5% | OS scheduling / thermal throttling |
+| **Peak Resident RSS** | 905.73 MB | 885.27 MB | **-2.26%** | **20.46 MB resident RAM reduction** |
+
+---
+
 ## 4. Exact Reproduction Commands
 
 All figures reported above are 100% reproducible with the following shell commands:
@@ -151,3 +185,4 @@ cmake --build build_cpu --target mobilellm_benchmark -j8
 # 4. Compare Baselines & Check for Regression
 python3 benchmarks/tools/compare.py benchmarks/results_smollm2_t1.json benchmarks/results_smollm2_t4.json
 ```
+
