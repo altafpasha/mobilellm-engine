@@ -149,7 +149,7 @@ struct TokenChunk {
 struct GenerationMetrics {
     uint32_t prompt_tokens{0};
     uint32_t completion_tokens{0};
-    double time_to_first_token_ms{0.0};
+    double time_to_first_token_ms{0.0}; // Legacy public contract: End-to-end TTFT (matches end_to_end_ttft_ms)
     double decode_tokens_per_second{0.0};
     double peak_memory_mb{0.0};
     double prefill_tokens_per_second{0.0};
@@ -159,10 +159,10 @@ struct GenerationMetrics {
     uint32_t threads_used{4};
 
     // --- Decomposed TTFT and Timing Metrics (PERF-01) ---
-    double queue_wait_time_ms{0.0};
-    double first_token_sampling_time_ms{0.0};
-    double pure_inference_ttft_ms{0.0};
-    double end_to_end_ttft_ms{0.0};
+    double queue_wait_time_ms{0.0};           // Duration in queue prior to admission: t_dequeue - t_enqueue
+    double first_token_sampling_time_ms{0.0}; // Sampling execution time for token 1: t_sample_end - t_sample_start
+    double pure_inference_ttft_ms{0.0};       // Pure hardware compute TTFT: prefill_time_ms + first_token_sampling_time_ms
+    double end_to_end_ttft_ms{0.0};           // Total end-to-end user-perceived TTFT: t_cb_end - t_enqueue
 };
 
 /**

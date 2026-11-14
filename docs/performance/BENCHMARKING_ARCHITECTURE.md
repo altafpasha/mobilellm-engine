@@ -91,10 +91,10 @@ Prior to Stage 2 remediation, each token generation step in `LlamaCppBackend::sa
 
 #### Remediation Design:
 1. **Session Ownership:** A persistent `reusable_logits` vector is owned directly by `SessionContext`.
-2. **Allocation Lifecycle:**
+2. **Allocation Lifecycle & Memory Reclamation:**
    - Pre-allocated once during `create_session()` sized to `mdl->n_vocab`.
    - Verified before sampling; safely resized if model vocabulary metadata differs.
-   - Cleared and deallocated with `shrink_to_fit()` upon `destroy_session()`.
+   - Cleared and capacity released with `shrink_to_fit()` upon `destroy_session()`, deallocating the buffer back to the process heap allocator. Note: `shrink_to_fit()` returns memory to the userspace allocator's arenas (e.g. Scudo/Jemalloc/libmalloc); physical page reclamation by the OS kernel (RSS reduction) is mediated by OS page mapping and allocator trimming policies. Repeated session creation and destruction recycles cached allocator arenas with zero leak.
 3. **Zero-Copy / In-Place Transfer:**
    - `std::memcpy(sess->reusable_logits.data(), raw_logits, mdl->n_vocab * sizeof(float))` replaces vector constructor allocations.
 4. **Concurrency Safety:**

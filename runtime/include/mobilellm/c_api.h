@@ -88,6 +88,11 @@ typedef struct {
 
 /**
  * @brief Telemetry metrics passed to completion callback.
+ * 
+ * Note on ttft_ms (Review Item R1):
+ * Preserves the public backward-compatible contract: time elapsed in milliseconds
+ * from request submission (enqueue) to first token delivery (end_to_end_ttft_ms).
+ * Binary ABI size (72 bytes) and 8-byte alignment are frozen and compatible with all clients.
  */
 typedef struct {
     uint32_t prompt_tokens;

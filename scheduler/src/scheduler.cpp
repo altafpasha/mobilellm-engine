@@ -286,7 +286,8 @@ uint32_t ContinuousBatchScheduler::step_batch() noexcept {
             req->metrics.first_token_sampling_time_ms = req->first_token_sampling_time_ms;
             req->metrics.pure_inference_ttft_ms = req->pure_inference_ttft_ms;
             req->metrics.end_to_end_ttft_ms = req->end_to_end_ttft_ms;
-            req->metrics.time_to_first_token_ms = req->pure_inference_ttft_ms;
+            // R1: Preserve public backward-compatible contract for time_to_first_token_ms (end-to-end TTFT)
+            req->metrics.time_to_first_token_ms = req->end_to_end_ttft_ms;
         }
 
         if (!keep_going) {

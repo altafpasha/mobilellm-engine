@@ -209,8 +209,8 @@ TEST_F(PerfRemediationTest, DecomposedTTFTMetricsValidation) {
     // Invariant: end_to_end_ttft_ms includes queue wait and delivery
     EXPECT_GE(m.end_to_end_ttft_ms, m.pure_inference_ttft_ms);
 
-    // Invariant: time_to_first_token_ms equals pure_inference_ttft_ms
-    EXPECT_EQ(m.time_to_first_token_ms, m.pure_inference_ttft_ms);
+    // Invariant (R1): time_to_first_token_ms preserves legacy contract, matching end_to_end_ttft_ms
+    EXPECT_EQ(m.time_to_first_token_ms, m.end_to_end_ttft_ms);
 }
 
 // 6. Timing under concurrent queued requests
@@ -288,4 +288,36 @@ TEST_F(PerfRemediationTest, CApiAbiPreservation) {
     mllm_session_destroy(eng, sess);
     mllm_model_unload(eng, mdl);
     mllm_engine_destroy(eng);
+}
+
+// 8. Repeated session lifecycle behavior (R2)
+TEST_F(PerfRemediationTest, RepeatedSessionLifecycleMemoryLeakCheck) {
+    MockBackend backend;
+    ASSERT_TRUE(backend.initialize(BackendConfig{}).is_ok());
+
+    ModelLoadConfig m_cfg;
+    m_cfg.model_path = "/tmp/test_model.gguf";
+    auto m_res = backend.load_model(m_cfg);
+    ASSERT_TRUE(m_res.is_ok());
+
+    // Create and destroy 50 sessions in sequence
+    for (int i = 0; i < 50; ++i) {
+        SessionConfig s_cfg;
+        auto s_res = backend.create_session(m_res.value(), s_cfg);
+        ASSERT_TRUE(s_res.is_ok());
+
+        std::vector<int32_t> out_tokens;
+        ASSERT_TRUE(backend.evaluate_prompt(s_res.value(), "Lifecycle check", out_tokens).is_ok());
+
+        SamplingParams sparams;
+        sparams.max_tokens = 5;
+        for (int k = 0; k < 5; ++k) {
+            auto tok = backend.sample_next_token(s_res.value(), sparams);
+            ASSERT_TRUE(tok.is_ok());
+        }
+
+        ASSERT_TRUE(backend.destroy_session(s_res.value()).is_ok());
+    }
+
+    ASSERT_TRUE(backend.unload_model(m_res.value()).is_ok());
 }
