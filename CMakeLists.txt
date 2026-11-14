@@ -61,3 +61,9 @@ add_subdirectory(runtime)
 if (MOBILELLM_BUILD_TOOLS)
     add_subdirectory(tools/developer-cli)
 endif()
+
+# Performance Benchmarking Suite
+option(MOBILELLM_BUILD_BENCHMARKS "Build performance benchmarking suite" ON)
+if (MOBILELLM_BUILD_BENCHMARKS)
+    add_subdirectory(benchmarks)
+endif()

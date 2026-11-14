@@ -1,0 +1,11 @@
+{
+  "scenario_name": "mobile_chat_smollm2_135m",
+  "model_path": "models/smollm2-135m-instruct-q4_k_m.gguf",
+  "threads": 4,
+  "context_length": 2048,
+  "max_tokens": 64,
+  "temperature": 0.0,
+  "warmup_iterations": 1,
+  "measurement_iterations": 5,
+  "prompt": "Explain the concept of quantum computing in two simple sentences for a student."
+}

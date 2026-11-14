@@ -1,0 +1,106 @@
+{
+  "benchmark_version": "0.1.0-dev",
+  "os": "macOS (Apple Darwin)",
+  "arch": "arm64",
+  "model": {
+    "path": "models/smollm2-135m-instruct-q4_k_m.gguf",
+    "architecture": "llama",
+    "file_size_mb": 100.569,
+    "context_length": 2048
+  },
+  "configuration": {
+    "threads": 1,
+    "max_tokens": 32,
+    "temperature": 0,
+    "warmup_runs": 1,
+    "measured_runs": 3
+  },
+  "model_loading": {
+    "duration_ms": 83.7251,
+    "rss_delta_mb": 118.828,
+    "session_init_ms": 6.30254
+  },
+  "summary": {
+    "ttft_mean_ms": 76.5168,
+    "ttft_p50_ms": 70.4585,
+    "prefill_tps_mean": 165.623,
+    "decode_tps_mean": 133.811,
+    "p50_latency_ms": 7.24515,
+    "p95_latency_ms": 8.63393,
+    "peak_rss_mb": 175.115
+  },
+  "iterations": [
+    {
+      "iteration": 0,
+      "is_warmup": true,
+      "prompt_tokens": 11,
+      "completion_tokens": 32,
+      "prefill_time_ms": 55.1151,
+      "prefill_tps": 199.582,
+      "decode_time_ms": 206.136,
+      "decode_tps": 155.237,
+      "ttft_pure_ms": 61.75,
+      "ttft_e2e_ms": 61.7536,
+      "p50_latency_ms": 6.35071,
+      "p90_latency_ms": 6.87737,
+      "p95_latency_ms": 6.93469,
+      "p99_latency_ms": 7.05879,
+      "jitter_stddev_ms": 0.262744,
+      "peak_rss_mb": 175.078
+    },
+    {
+      "iteration": 1,
+      "is_warmup": false,
+      "prompt_tokens": 11,
+      "completion_tokens": 32,
+      "prefill_time_ms": 76.7495,
+      "prefill_tps": 143.323,
+      "decode_time_ms": 237.027,
+      "decode_tps": 135.006,
+      "ttft_pure_ms": 86.456,
+      "ttft_e2e_ms": 86.4633,
+      "p50_latency_ms": 7.32579,
+      "p90_latency_ms": 8.29367,
+      "p95_latency_ms": 8.51306,
+      "p99_latency_ms": 8.84745,
+      "jitter_stddev_ms": 0.564523,
+      "peak_rss_mb": 175.094
+    },
+    {
+      "iteration": 2,
+      "is_warmup": false,
+      "prompt_tokens": 11,
+      "completion_tokens": 32,
+      "prefill_time_ms": 63.3661,
+      "prefill_tps": 173.594,
+      "decode_time_ms": 232.022,
+      "decode_tps": 137.918,
+      "ttft_pure_ms": 72.627,
+      "ttft_e2e_ms": 72.6285,
+      "p50_latency_ms": 7.01367,
+      "p90_latency_ms": 7.95779,
+      "p95_latency_ms": 8.16558,
+      "p99_latency_ms": 8.41736,
+      "jitter_stddev_ms": 0.469052,
+      "peak_rss_mb": 175.109
+    },
+    {
+      "iteration": 3,
+      "is_warmup": false,
+      "prompt_tokens": 11,
+      "completion_tokens": 32,
+      "prefill_time_ms": 61.128,
+      "prefill_tps": 179.95,
+      "decode_time_ms": 249.012,
+      "decode_tps": 128.508,
+      "ttft_pure_ms": 70.455,
+      "ttft_e2e_ms": 70.4585,
+      "p50_latency_ms": 7.396,
+      "p90_latency_ms": 9.0365,
+      "p95_latency_ms": 9.22315,
+      "p99_latency_ms": 12.2423,
+      "jitter_stddev_ms": 1.22707,
+      "peak_rss_mb": 175.141
+    }
+  ]
+}
