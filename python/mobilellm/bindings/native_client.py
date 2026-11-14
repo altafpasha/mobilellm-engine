@@ -233,7 +233,11 @@ class NativeSession:
                         on_metrics(metrics_holder[0])
 
                 if status.code != 0 and status.code != 9:  # 9 = cancelled
-                    msg = status.message.decode("utf-8", errors="replace") if status.message else "Generation failed"
+                    msg = (
+                        status.message.decode("utf-8", errors="replace")
+                        if status.message
+                        else "Generation failed"
+                    )
                     err = map_error_code(status.code, msg)
                     error_holder[0] = err
             finally:
@@ -256,7 +260,11 @@ class NativeSession:
         )
 
         if status.code != 0:
-            msg = status.message.decode("utf-8", errors="replace") if status.message else "mllm_generate failed"
+            msg = (
+                status.message.decode("utf-8", errors="replace")
+                if status.message
+                else "mllm_generate failed"
+            )
             raise map_error_code(status.code, msg) or MobileLLMError(msg, status.code)
 
         self._active_gen = gen_handle.value

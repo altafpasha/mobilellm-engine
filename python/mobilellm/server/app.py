@@ -392,9 +392,7 @@ class MobileLLMServer(ThreadingHTTPServer):
         self.api_key = api_key
         self.start_time = time.time()
         self.allowed_model_dirs = (
-            [Path(d).resolve() for d in allowed_model_dirs]
-            if allowed_model_dirs
-            else None
+            [Path(d).resolve() for d in allowed_model_dirs] if allowed_model_dirs else None
         )
         self.transport = NativeTransport(lib_path=lib_path)
         self.transport.connect()
