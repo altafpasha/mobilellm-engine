@@ -48,7 +48,10 @@ if command -v adb >/dev/null 2>&1; then
         if [[ "$response" =~ ^[Yy]$ ]]; then
             echo "==> Pushing to /sdcard/Download/..."
             adb push "${TARGET_PATH}" /sdcard/Download/
-            echo "==> Push successful! In NEXA, tap '+' -> 'Import .gguf from storage...' and select it."
+            adb shell "mkdir -p /sdcard/Android/data/ai.codesec.nexa.debug/files/models /sdcard/Android/data/ai.codesec.nexa/files/models" 2>/dev/null || true
+            adb push "${TARGET_PATH}" /sdcard/Android/data/ai.codesec.nexa.debug/files/models/ 2>/dev/null || true
+            adb push "${TARGET_PATH}" /sdcard/Android/data/ai.codesec.nexa/files/models/ 2>/dev/null || true
+            echo "==> Push successful! NEXA will auto-detect the model on startup."
         fi
     else
         echo "==> No Android device detected via adb. To push later, run:"

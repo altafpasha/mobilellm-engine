@@ -207,6 +207,20 @@ fun ModelManagerScreen(
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Import Model File")
                         }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("Quick Manual Test via ADB:", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("adb push <model>.gguf /sdcard/Download/", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text("or run: ./scripts/download_model.sh smollm2", fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                            }
+                        }
                     }
                 }
             } else {
