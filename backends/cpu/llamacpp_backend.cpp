@@ -102,6 +102,16 @@ Result<BackendModelHandle> LlamaCppBackend::load_model(const ModelLoadConfig& co
     mparams.use_mmap = config.use_mmap;
     mparams.use_mlock = config.use_mlock;
 
+    if (config.preferred_backend == BackendType::VULKAN) {
+        mparams.n_gpu_layers = 99; // Offload all model layers to Vulkan GPU
+        current_backend_.store(BackendType::VULKAN);
+        LOGI("Vulkan GPU backend requested: offloading %d layers", mparams.n_gpu_layers);
+    } else {
+        mparams.n_gpu_layers = 0; // Pure CPU execution
+        current_backend_.store(BackendType::CPU_NEON);
+        LOGI("CPU NEON backend requested: offloading 0 layers");
+    }
+
     // Detect if model is located on emulated FUSE storage (e.g. /sdcard/ or /storage/emulated/).
     // On Android 11+ (API 30-37), mmap on FUSE storage triggers userspace daemon page-fault round-trips
     // during tensor access, collapsing inference throughput by up to 8x.

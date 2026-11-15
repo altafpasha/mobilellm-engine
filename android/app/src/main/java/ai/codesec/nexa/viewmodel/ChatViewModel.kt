@@ -566,7 +566,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateBackend(backend: BackendType) {
+        val previous = _uiState.value.preferredBackend
         _uiState.update { it.copy(preferredBackend = backend) }
+        if (previous != backend && _uiState.value.isModelLoaded) {
+            val loadedName = _uiState.value.loadedModelName
+            val currentFile = _uiState.value.availableModels.firstOrNull { it.name == loadedName }
+            if (currentFile != null && currentFile.exists()) {
+                Log.i(TAG, "Backend changed from $previous to $backend. Reloading model: ${currentFile.name}")
+                loadModel(currentFile)
+            }
+        }
     }
 
     fun updateThreads(threads: Int) {

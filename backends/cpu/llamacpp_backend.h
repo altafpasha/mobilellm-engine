@@ -45,10 +45,13 @@ public:
     SessionContextTelemetry get_session_telemetry(BackendSessionHandle session) const noexcept override;
     Status set_threads(BackendSessionHandle session, uint32_t n_threads) noexcept override;
 
-    BackendType type() const noexcept override { return BackendType::CPU_NEON; }
-    std::string name() const noexcept override { return "LlamaCpp_CPU_NEON"; }
+    BackendType type() const noexcept override { return current_backend_; }
+    std::string name() const noexcept override {
+        return (current_backend_ == BackendType::VULKAN) ? "LlamaCpp_Vulkan_GPU" : "LlamaCpp_CPU_NEON";
+    }
 
 private:
+    std::atomic<BackendType> current_backend_{BackendType::CPU_NEON};
     struct LoadedModel {
         BackendModelHandle handle;
         std::string path;

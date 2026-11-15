@@ -28,7 +28,8 @@ android {
                     "-DMOBILELLM_BUILD_TESTS=OFF",
                     "-DMOBILELLM_ENABLE_LLAMACPP=ON",
                     "-DGGML_OPENMP=OFF",
-                    "-DMOBILELLM_ENABLE_VULKAN=OFF",
+                    "-DGGML_VULKAN=ON",
+                    "-DMOBILELLM_ENABLE_VULKAN=ON",
                     "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
                 )
             }

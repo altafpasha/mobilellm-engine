@@ -15,10 +15,12 @@ if (EXISTS "${MOBILELLM_ROOT_DIR}/third_party/llama.cpp/CMakeLists.txt")
     set(LLAMA_BUILD_TESTS OFF CACHE BOOL "Build llama.cpp tests" FORCE)
     set(LLAMA_BUILD_SERVER OFF CACHE BOOL "Build llama.cpp server" FORCE)
     set(GGML_OPENMP OFF CACHE BOOL "ggml: disable OpenMP on Android" FORCE)
+    set(GGML_VULKAN ON CACHE BOOL "ggml: enable Vulkan on Android" FORCE)
     add_subdirectory(${MOBILELLM_ROOT_DIR}/third_party/llama.cpp ${CMAKE_CURRENT_BINARY_DIR}/llama_build EXCLUDE_FROM_ALL)
 endif()
 
 find_package(Threads REQUIRED)
+find_package(Vulkan REQUIRED)
 
 # Build scheduler and static core runtime libraries
 add_subdirectory(${MOBILELLM_ROOT_DIR}/scheduler ${CMAKE_CURRENT_BINARY_DIR}/scheduler_build)
@@ -46,5 +48,6 @@ target_link_libraries(mobilellm_jni PRIVATE
     ggml
     ggml-cpu
     ggml-base
+    vulkan
     log
 )

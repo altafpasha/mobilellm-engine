@@ -70,6 +70,18 @@ Status EngineImpl::initialize(const EngineConfig& config) noexcept {
 #endif
     }
 
+    if (!registry.has_backend(BackendType::VULKAN)) {
+#ifdef MOBILELLM_ENABLE_LLAMACPP
+        registry.register_backend(BackendType::VULKAN, []() {
+            return std::make_unique<LlamaCppBackend>();
+        });
+#else
+        registry.register_backend(BackendType::VULKAN, []() {
+            return std::make_unique<MockBackend>();
+        });
+#endif
+    }
+
     if (!backend_) {
         backend_ = registry.create(BackendType::AUTO);
         if (!backend_) {
