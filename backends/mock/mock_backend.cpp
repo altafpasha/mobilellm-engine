@@ -167,5 +167,14 @@ bool MockBackend::is_eos_token(BackendSessionHandle /*session*/, int32_t token_i
     return token_id == MOCK_EOS_TOKEN;
 }
 
+Status MockBackend::set_threads(BackendSessionHandle session, uint32_t /*n_threads*/) noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = sessions_.find(session);
+    if (it == sessions_.end()) {
+        return Status::error(StatusCode::SESSION_NOT_FOUND, "Session handle not found");
+    }
+    return Status::ok();
+}
+
 } // namespace mobilellm
 

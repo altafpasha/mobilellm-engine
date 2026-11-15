@@ -10,6 +10,7 @@
 // Forward declarations of llama.cpp structs to avoid leaking headers
 struct llama_model;
 struct llama_context;
+struct ggml_threadpool;
 
 namespace mobilellm {
 
@@ -61,6 +62,7 @@ private:
         BackendSessionHandle handle{0};
         BackendModelHandle model_handle{0};
         llama_context* raw_ctx{nullptr};
+        struct ggml_threadpool* threadpool{nullptr};
         std::vector<int32_t> history_tokens;
         int32_t last_n_tokens{0};
         std::unique_ptr<Sampler> sampler;

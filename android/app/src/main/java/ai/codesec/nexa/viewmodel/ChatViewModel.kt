@@ -79,7 +79,13 @@ data class ChatUiState(
     val modelMetadataMap: Map<String, ModelMetadata> = emptyMap(),
     val samplingParams: SamplingParams = SamplingParams(),
     val preferredBackend: BackendType = BackendType.CPU_NEON,
-    val threadCount: Int = Runtime.getRuntime().availableProcessors().coerceAtLeast(1),
+    val threadCount: Int = run {
+        val totalCores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        // On 8+ core mobile SoCs (e.g. Snapdragon big.LITTLE / DynamIQ), clamp default inference threads
+        // to 4 performance cores. Using all 8 cores causes thread barrier stalling on slow Cortex-A510
+        // efficiency cores and severe memory bandwidth / thermal thrashing.
+        if (totalCores >= 8) 4 else minOf(4, totalCores)
+    },
     val engineVersion: String = "0.1.0-dev",
     val hardwareInfo: String = "Detecting...",
     val lastMetrics: GenerationMetrics? = null,

@@ -20,8 +20,10 @@ android {
 
         externalNativeBuild {
             cmake {
+                cFlags("-O3", "-DNDEBUG")
                 cppFlags("-std=c++20", "-fexceptions", "-frtti", "-O3", "-DNDEBUG")
                 arguments(
+                    "-DCMAKE_BUILD_TYPE=Release",
                     "-DANDROID_STL=c++_shared",
                     "-DMOBILELLM_BUILD_TESTS=OFF",
                     "-DMOBILELLM_ENABLE_LLAMACPP=ON",
