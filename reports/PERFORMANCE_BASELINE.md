@@ -115,7 +115,8 @@ xychart-beta
 
 ### 3.3 Target Mobile Android Baseline (NEXA Telemetry)
 
-From verified physical/AVD telemetry documented in [`docs/reports/nexa-production-benchmark.md`](file:///Users/Apple/Developer/ai-apps/MobileLLM/docs/reports/nexa-production-benchmark.md):
+#### A. Reference Android AVD Baseline (Pixel 9 Pro / Android 17 / API 37)
+From verified telemetry documented in [`docs/reports/nexa-production-benchmark.md`](file:///Users/Apple/Developer/ai-apps/MobileLLM/docs/reports/nexa-production-benchmark.md):
 
 - **Platform:** Google Pixel AVD (`sdk_gphone16k_arm64`), Android 17 / API 37
 - **Inference Model:** `SmolLM2-135M-Instruct-Q4_K_M.gguf`
@@ -125,8 +126,23 @@ From verified physical/AVD telemetry documented in [`docs/reports/nexa-productio
 - **JVM Heap Allocation:** **7.7 – 9.6 MB**
 - **Network Permissions:** Zero (100% offline execution)
 
+#### B. Physical Hardware Production Baseline: OnePlus CPH2691 (OnePlus 12R)
+Physical device benchmark measured on Qualcomm Snapdragon 8 Gen 2 (SM8550-AB: 1x 3.2GHz Cortex-X3 + 4x 2.8GHz A715/A710 + 3x 2.0GHz A510, 16 GB LPDDR5X RAM, Android 17 / API 37):
+
+- **Platform:** Physical OnePlus CPH2691 (OnePlus 12R), Android 17 (API 37)
+- **Inference Model:** `Qwen2.5-1.5B-Instruct-Q4_K_M.gguf` (1.09 GB GGUF, 28 layers, 152,064 vocab)
+- **Active Threads:** 4 (clamped to Cortex-X3 / A715 performance cluster)
+- **Threadpool Architecture:** Persistent `ggml_threadpool` bound via `llama_attach_threadpool`
+- **Decode Throughput:** **8.40 tokens/sec** (Baseline: 7.60 tok/s; Regressed v0.2.2: 1.20 tok/s)
+- **Time to First Token (TTFT):** **3,820 ms** (Baseline: 4,197 ms; Regressed v0.2.2: 20,868 ms)
+- **Prompt Prefill Throughput:** **21.40 tokens/sec** (Regressed v0.2.2: 2.80 tok/s)
+- **Total Latency (142 tokens):** **20.72 seconds** (Regressed v0.2.2: 126.41 seconds)
+- **Peak Native RSS:** **1092.2 MB**
+- **Thermal Status:** Normal (Status 0 - None)
+- **Detailed Investigation Report:** [`reports/PERFORMANCE_REGRESSION_REPORT.md`](file:///Users/Apple/Developer/ai-apps/MobileLLM/reports/PERFORMANCE_REGRESSION_REPORT.md)
+
 > [!NOTE]
-> The throughput disparity between host Darwin CPU (195 tok/s) and mobile Android AVD (6.67 tok/s) illustrates why host numbers must never be labeled as mobile performance. The mobile environment operates under constrained thermal limits, mobile memory bandwidth (LPDDR4X/LPDDR5), and Android OS scheduling overhead.
+> The throughput disparity between host Darwin CPU (195 tok/s) and mobile Android hardware (8.4 tok/s on 1.5B model) illustrates why host numbers must never be labeled as mobile performance. The mobile environment operates under constrained thermal limits, mobile memory bandwidth (LPDDR4X/LPDDR5), big.LITTLE core topology, and Android OS scheduling overhead.
 
 ---
 

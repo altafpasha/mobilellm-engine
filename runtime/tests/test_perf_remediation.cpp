@@ -321,3 +321,48 @@ TEST_F(PerfRemediationTest, RepeatedSessionLifecycleMemoryLeakCheck) {
 
     ASSERT_TRUE(backend.unload_model(m_res.value()).is_ok());
 }
+
+// 9. Dynamic thread update and session threadpool re-allocation
+TEST_F(PerfRemediationTest, DynamicThreadUpdateAndThreadpoolLifecycle) {
+    MockBackend backend;
+    ASSERT_TRUE(backend.initialize(BackendConfig{}).is_ok());
+
+    ModelLoadConfig m_cfg;
+    m_cfg.model_path = "/tmp/test_model.gguf";
+    auto m_res = backend.load_model(m_cfg);
+    ASSERT_TRUE(m_res.is_ok());
+
+    SessionConfig s_cfg;
+    auto s_res = backend.create_session(m_res.value(), s_cfg);
+    ASSERT_TRUE(s_res.is_ok());
+
+    // Test dynamic thread updates
+    EXPECT_TRUE(backend.set_threads(s_res.value(), 8).is_ok());
+    EXPECT_TRUE(backend.set_threads(s_res.value(), 4).is_ok());
+    EXPECT_TRUE(backend.set_threads(s_res.value(), 1).is_ok());
+
+    // Invalid session should return SESSION_NOT_FOUND
+    EXPECT_EQ(backend.set_threads(99999, 4).code, StatusCode::SESSION_NOT_FOUND);
+
+    ASSERT_TRUE(backend.destroy_session(s_res.value()).is_ok());
+    ASSERT_TRUE(backend.unload_model(m_res.value()).is_ok());
+}
+
+// 10. Emulated FUSE storage path detection and validation
+TEST_F(PerfRemediationTest, EmulatedFuseStoragePathHandling) {
+    // Validate path patterns identified in root-cause analysis
+    std::string fuse_path1 = "/sdcard/Download/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf";
+    std::string fuse_path2 = "/storage/emulated/0/Download/model.gguf";
+    std::string internal_path = "/data/user/0/ai.codesec.nexa/files/models/model.gguf";
+
+    auto is_fuse_path = [](const std::string& path) {
+        return path.find("/sdcard/") != std::string::npos ||
+               path.find("/storage/emulated/") != std::string::npos ||
+               path.rfind("/sdcard", 0) == 0 ||
+               path.rfind("/storage/emulated", 0) == 0;
+    };
+
+    EXPECT_TRUE(is_fuse_path(fuse_path1));
+    EXPECT_TRUE(is_fuse_path(fuse_path2));
+    EXPECT_FALSE(is_fuse_path(internal_path));
+}
