@@ -1,0 +1,12 @@
+{
+  "scenario_name": "edge_reasoning_llama32_1b",
+  "model_path": "models/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+  "threads": 4,
+  "context_length": 2048,
+  "max_tokens": 64,
+  "temperature": 0.0,
+  "warmup_iterations": 1,
+  "measurement_iterations": 5,
+  "prompt": "List the three primary laws of classical thermodynamics and state one real-world application for each."
+}
+

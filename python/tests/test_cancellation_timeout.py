@@ -54,4 +54,3 @@ def test_simulated_timeout_error() -> None:
     engine = Engine(transport=mock_transport)
     with pytest.raises(MobileLLMTimeoutError, match="Operation timed out"):
         engine.connect()
-

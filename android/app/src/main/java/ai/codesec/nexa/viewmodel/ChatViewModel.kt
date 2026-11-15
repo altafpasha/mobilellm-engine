@@ -126,6 +126,18 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             val dirs = mutableListOf<File>()
             dirs.add(File(app.filesDir, "models").apply { mkdirs() })
             app.getExternalFilesDir("models")?.let { dirs.add(it.apply { mkdirs() }) }
+            try {
+                val downloads = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                if (downloads != null && downloads.exists() && downloads.canRead() && !dirs.contains(downloads)) {
+                    dirs.add(downloads)
+                }
+            } catch (_: Exception) {}
+            try {
+                val directSdDownload = File("/sdcard/Download")
+                if (directSdDownload.exists() && directSdDownload.canRead() && !dirs.contains(directSdDownload)) {
+                    dirs.add(directSdDownload)
+                }
+            } catch (_: Exception) {}
             return dirs
         }
 

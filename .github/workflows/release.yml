@@ -1,0 +1,138 @@
+name: Unified Multi-Artifact Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag name (e.g., v0.1.0-beta.1)'
+        required: true
+        default: 'v0.1.0-beta.1'
+      is_draft:
+        description: 'Publish as a Draft release'
+        required: true
+        type: boolean
+        default: true
+      is_prerelease:
+        description: 'Mark as a Pre-release'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-python-wheel:
+    name: Build Python Wheel & SDist
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Build Backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+
+      - name: Build Packages
+        run: |
+          python -m build python/
+
+      - name: Upload Python Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-python
+          path: python/dist/*
+
+  build-android-artifacts:
+    name: Build Android SDK AAR & Demo APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Install Android NDK & CMake
+        run: |
+          echo "${ANDROID_HOME}/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "${ANDROID_HOME}/platform-tools" >> $GITHUB_PATH
+          export PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${PATH}"
+          yes | sdkmanager --licenses || true
+          sdkmanager --install "ndk;27.1.12297006" "cmake;3.22.1"
+
+      - name: Ensure Executable Permissions
+        run: chmod +x android/gradlew
+
+      - name: Assemble SDK AAR and Demo APK
+        run: |
+          cd android
+          ./gradlew :sdk:assembleRelease :app:assembleRelease --stacktrace
+
+      - name: Upload Android Release Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-android
+          path: |
+            android/sdk/build/outputs/aar/*-release.aar
+            android/app/build/outputs/apk/release/*.apk
+
+  publish-release:
+    name: Package Checksums & Publish Release
+    runs-on: ubuntu-latest
+    needs: [build-python-wheel, build-android-artifacts]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download Python Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-python
+          path: release-assets/
+
+      - name: Download Android Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-android
+          path: release-assets/
+
+      - name: Compute SHA256 Checksums
+        run: |
+          cd release-assets
+          echo "Release Assets Directory:"
+          ls -la
+          sha256sum * > SHA256SUMS.txt
+          echo "Generated SHA256 Checksums:"
+          cat SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag || github.ref_name }}
+          name: "MobileLLM Engine ${{ github.event.inputs.release_tag || github.ref_name }}"
+          draft: ${{ github.event.inputs.is_draft || false }}
+          prerelease: ${{ github.event.inputs.is_prerelease || true }}
+          files: release-assets/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

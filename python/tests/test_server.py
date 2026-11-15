@@ -47,6 +47,18 @@ def find_free_port() -> int:
         return s.getsockname()[1]
 
 
+def _has_live_server_dependencies() -> bool:
+    if not Path("models/smollm2-135m-instruct-q4_k_m.gguf").is_file():
+        return False
+    try:
+        from mobilellm.bindings.native_client import _find_library
+
+        _find_library()
+        return True
+    except FileNotFoundError:
+        return False
+
+
 def test_loopback_detection() -> None:
     assert is_loopback_address("127.0.0.1")
     assert is_loopback_address("localhost")
@@ -248,6 +260,8 @@ def test_server_blocks_model_traversal_via_http(tmp_path: Path) -> None:
 def running_server() -> Generator[MobileLLMServer, None, None]:
     if not check_loopback_socket_allowed():
         pytest.skip("Loopback TCP socket connection not permitted in current sandbox environment")
+    if not _has_live_server_dependencies():
+        pytest.skip("Native library or test model not found; skipping live server test")
 
     port = find_free_port()
     server = start_server(

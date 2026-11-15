@@ -65,6 +65,7 @@ Result<BackendSessionHandle> MockBackend::create_session(
     session.model = model;
     session.step = 0;
     session.sampler = std::make_unique<Sampler>(42 + static_cast<uint64_t>(session_id));
+    session.reusable_logits.resize(257, 0.1f);
     sessions_[session_id] = std::move(session);
     return session_id;
 }
@@ -126,19 +127,23 @@ Result<int32_t> MockBackend::sample_next_token(
         return MOCK_EOS_TOKEN;
     }
 
-    // Generate mock logits for vocabulary size 256 + 1 EOS
-    std::vector<float> logits(257, 0.1f);
+    // PERF-03: Reuse pre-allocated logits buffer for mock sampling
+    if (s.reusable_logits.size() != 257) {
+        s.reusable_logits.resize(257, 0.1f);
+    } else {
+        std::fill(s.reusable_logits.begin(), s.reusable_logits.end(), 0.1f);
+    }
     // Make letters more likely based on step
     int32_t base_char = 'a' + static_cast<int32_t>(s.step % 26);
-    logits[base_char] = 5.0f;
-    logits[' '] = 2.0f;
+    s.reusable_logits[base_char] = 5.0f;
+    s.reusable_logits[' '] = 2.0f;
 
     // EOS condition
     if (s.step >= 50) {
-        logits[256] = 10.0f; // EOS
+        s.reusable_logits[256] = 10.0f; // EOS
     }
 
-    int32_t chosen = s.sampler ? s.sampler->sample(logits, s.generated_tokens, params) : 0;
+    int32_t chosen = s.sampler ? s.sampler->sample(s.reusable_logits, s.generated_tokens, params) : 0;
     if (chosen == 256) {
         chosen = MOCK_EOS_TOKEN;
     }
