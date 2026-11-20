@@ -89,6 +89,7 @@ private:
         int32_t model_layers{0};
         int32_t offloaded_layers{-1};
         int32_t total_offloadable_layers{-1};
+        std::string fallback_reason;
     };
 
     struct SessionContext {
@@ -114,6 +115,7 @@ private:
         int32_t model_layers{0};
         int32_t offloaded_layers{-1};
         int32_t total_offloadable_layers{-1};
+        std::string fallback_reason;
         mutable std::mutex session_mutex;
     };
 

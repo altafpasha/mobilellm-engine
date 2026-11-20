@@ -188,6 +188,7 @@ struct GenerationDiagnostics {
     std::string gpu_vendor;
     std::string gpu_driver;
     std::string vulkan_gemv_path; // "mat_vec" | "mat_mat" | "" when not applicable
+    std::string fallback_reason;  // Reason for automatic fallback to CPU_NEON
 
     // Offload / graph shape (parsed from llama.cpp logs, not from config intent)
     int32_t model_layers{0};

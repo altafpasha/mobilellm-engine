@@ -200,8 +200,12 @@ bool MockBackend::is_eos_token(BackendSessionHandle /*session*/, int32_t token_i
 
 GenerationDiagnostics MockBackend::describe_session(BackendSessionHandle session) const noexcept {
     GenerationDiagnostics d;
-    d.backend_requested = "mock";
-    d.backend_selected = "mock";
+    d.backend_requested = (type() == BackendType::VULKAN) ? "vulkan" : ((type() == BackendType::CPU_NEON) ? "cpu_neon" : "mock");
+    d.backend_selected = d.backend_requested;
+    d.gpu_device = gpu_device_description();
+    if (!d.gpu_device.empty()) {
+        d.gpu_vendor = (d.gpu_device.find("Adreno") != std::string::npos || d.gpu_device.find("Qualcomm") != std::string::npos) ? "Qualcomm" : "";
+    }
     d.cpu_threads = 1;
     d.cpu_cores = 1;
     std::lock_guard<std::mutex> lock(mutex_);
@@ -210,8 +214,8 @@ GenerationDiagnostics MockBackend::describe_session(BackendSessionHandle session
         d.error = "session_not_found";
         return d;
     }
-    d.gpu_offload_verified = false;
-    d.gpu_layers_actual = 0;
+    d.gpu_offload_verified = (type() == BackendType::VULKAN);
+    d.gpu_layers_actual = (type() == BackendType::VULKAN) ? 28 : 0;
     return d;
 }
 

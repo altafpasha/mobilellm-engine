@@ -104,11 +104,16 @@ public:
 
     BackendType type() const noexcept override { return BackendType::VULKAN; }
     std::string name() const noexcept override { return "MockVulkanBackend"; }
+    std::string gpu_device_description() const noexcept override {
+        return gpu_desc_.empty() ? "Adreno (TM) 740 (Qualcomm, driver 512.744.0)" : gpu_desc_;
+    }
+    void set_gpu_device_description(const std::string& desc) { gpu_desc_ = desc; }
 
     void set_simulate_init_failure(bool fail) { simulate_init_failure_ = fail; }
 
 private:
     bool simulate_init_failure_{false};
+    std::string gpu_desc_;
 };
 
 } // namespace mobilellm
