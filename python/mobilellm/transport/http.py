@@ -259,6 +259,15 @@ class HTTPTransport(BaseTransport):
         except httpx.HTTPError as e:
             raise MobileLLMConnectionError(f"Session destroy failed: {e}") from e
 
+    def reset_session(self, session_id: str) -> bool:
+        client = self._get_client()
+        url = _v1_url(self._endpoint, f"sessions/{session_id}/reset")
+        try:
+            resp = client.post(url)
+            return resp.status_code == 200
+        except httpx.HTTPError as e:
+            raise MobileLLMConnectionError(f"Session reset failed: {e}") from e
+
     def generate(
         self,
         prompt: str,
@@ -602,6 +611,15 @@ class AsyncHTTPTransport(AsyncBaseTransport):
             return resp.status_code in (200, 204)
         except httpx.HTTPError as e:
             raise MobileLLMConnectionError(f"Session destroy failed: {e}") from e
+
+    async def reset_session(self, session_id: str) -> bool:
+        client = self._get_client()
+        url = _v1_url(self._endpoint, f"sessions/{session_id}/reset")
+        try:
+            resp = await client.post(url)
+            return resp.status_code == 200
+        except httpx.HTTPError as e:
+            raise MobileLLMConnectionError(f"Session reset failed: {e}") from e
 
     async def generate(
         self,

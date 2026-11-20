@@ -32,6 +32,78 @@ private:
     const char* chars_{nullptr};
 };
 
+static jstring make_safe_utf8_jstring(JNIEnv* env, const char* str) {
+    if (!str || !*str) {
+        return env->NewStringUTF("");
+    }
+    const auto* bytes = reinterpret_cast<const unsigned char*>(str);
+    std::string safe;
+    safe.reserve(std::strlen(str));
+    size_t i = 0;
+    size_t len = std::strlen(str);
+
+    while (i < len) {
+        unsigned char c = bytes[i];
+        if (c < 0x80) {
+            if (c == 0) break;
+            safe.push_back(static_cast<char>(c));
+            i++;
+        } else if ((c & 0xE0) == 0xC0) {
+            if (i + 1 < len && (bytes[i + 1] & 0xC0) == 0x80 && (c >= 0xC2)) {
+                safe.push_back(static_cast<char>(bytes[i]));
+                safe.push_back(static_cast<char>(bytes[i + 1]));
+                i += 2;
+            } else {
+                safe.append("\xEF\xBF\xBD");
+                i++;
+            }
+        } else if ((c & 0xF0) == 0xE0) {
+            if (i + 2 < len &&
+                (bytes[i + 1] & 0xC0) == 0x80 &&
+                (bytes[i + 2] & 0xC0) == 0x80) {
+                if ((c == 0xE0 && bytes[i + 1] < 0xA0) ||
+                    (c == 0xED && bytes[i + 1] >= 0xA0)) {
+                    safe.append("\xEF\xBF\xBD");
+                    i++;
+                } else {
+                    safe.push_back(static_cast<char>(bytes[i]));
+                    safe.push_back(static_cast<char>(bytes[i + 1]));
+                    safe.push_back(static_cast<char>(bytes[i + 2]));
+                    i += 3;
+                }
+            } else {
+                safe.append("\xEF\xBF\xBD");
+                i++;
+            }
+        } else if ((c & 0xF8) == 0xF0) {
+            if (i + 3 < len &&
+                (bytes[i + 1] & 0xC0) == 0x80 &&
+                (bytes[i + 2] & 0xC0) == 0x80 &&
+                (bytes[i + 3] & 0xC0) == 0x80) {
+                if ((c == 0xF0 && bytes[i + 1] < 0x90) || (c > 0xF4) ||
+                    (c == 0xF4 && bytes[i + 1] > 0x8F)) {
+                    safe.append("\xEF\xBF\xBD");
+                    i++;
+                } else {
+                    safe.push_back(static_cast<char>(bytes[i]));
+                    safe.push_back(static_cast<char>(bytes[i + 1]));
+                    safe.push_back(static_cast<char>(bytes[i + 2]));
+                    safe.push_back(static_cast<char>(bytes[i + 3]));
+                    i += 4;
+                }
+            } else {
+                safe.append("\xEF\xBF\xBD");
+                i++;
+            }
+        } else {
+            safe.append("\xEF\xBF\xBD");
+            i++;
+        }
+    }
+
+    return env->NewStringUTF(safe.c_str());
+}
+
 void throw_java_exception(JNIEnv* env, int32_t code, const char* message) {
     jclass ex_class = env->FindClass("ai/codesec/mobilellm/MobileLLMException");
     if (!ex_class) {
@@ -101,6 +173,23 @@ Java_ai_codesec_mobilellm_NativeBridge_nativeDestroy(
     }
 }
 
+JNIEXPORT void JNICALL
+Java_ai_codesec_mobilellm_NativeBridge_nativeSwitchBackend(
+    JNIEnv* env,
+    jclass /*clazz*/,
+    jlong engine_handle,
+    jint backend
+) {
+    if (engine_handle == 0) return;
+    mllm_status_t st = mllm_engine_switch_backend(
+        static_cast<mllm_engine_t>(engine_handle),
+        backend
+    );
+    if (st.code != 0) {
+        throw_java_exception(env, st.code, st.message);
+    }
+}
+
 JNIEXPORT jlong JNICALL
 Java_ai_codesec_mobilellm_NativeBridge_nativeLoadModel(
     JNIEnv* env,
@@ -128,6 +217,46 @@ Java_ai_codesec_mobilellm_NativeBridge_nativeLoadModel(
     cfg.n_threads = n_threads > 0 ? n_threads : 4;
     cfg.use_mmap = use_mmap;
     cfg.memory_budget_mb = memory_budget_mb;
+    cfg.n_gpu_layers = -1;
+
+    mllm_model_t model = 0;
+    mllm_status_t st = mllm_model_load(static_cast<mllm_engine_t>(engine_handle), &cfg, &model);
+    if (st.code != 0) {
+        throw_java_exception(env, st.code, st.message);
+        return 0;
+    }
+    return static_cast<jlong>(model);
+}
+
+JNIEXPORT jlong JNICALL
+Java_ai_codesec_mobilellm_NativeBridge_nativeLoadModelWithLayers(
+    JNIEnv* env,
+    jclass /*clazz*/,
+    jlong engine_handle,
+    jstring model_path,
+    jint backend,
+    jint context_length,
+    jint n_threads,
+    jboolean use_mmap,
+    jfloat memory_budget_mb,
+    jint n_gpu_layers
+) {
+    if (!model_path) {
+        throw_java_exception(env, 1, "model_path cannot be null");
+        return 0;
+    }
+
+    JStringGuard path_guard(env, model_path);
+
+    mllm_model_config_t cfg;
+    std::memset(&cfg, 0, sizeof(cfg));
+    cfg.model_path = path_guard.c_str();
+    cfg.backend = backend;
+    cfg.context_length = context_length > 0 ? context_length : 2048;
+    cfg.n_threads = n_threads > 0 ? n_threads : 4;
+    cfg.use_mmap = use_mmap;
+    cfg.memory_budget_mb = memory_budget_mb;
+    cfg.n_gpu_layers = n_gpu_layers;
 
     mllm_model_t model = 0;
     mllm_status_t st = mllm_model_load(static_cast<mllm_engine_t>(engine_handle), &cfg, &model);
@@ -198,6 +327,22 @@ Java_ai_codesec_mobilellm_NativeBridge_nativeDestroySession(
     }
 }
 
+JNIEXPORT void JNICALL
+Java_ai_codesec_mobilellm_NativeBridge_nativeResetSession(
+    JNIEnv* env,
+    jclass /*clazz*/,
+    jlong engine_handle,
+    jlong session_handle
+) {
+    mllm_status_t st = mllm_session_reset(
+        static_cast<mllm_engine_t>(engine_handle),
+        static_cast<mllm_session_t>(session_handle)
+    );
+    if (st.code != 0) {
+        throw_java_exception(env, st.code, st.message);
+    }
+}
+
 JNIEXPORT jlong JNICALL
 Java_ai_codesec_mobilellm_NativeBridge_nativeGenerate(
     JNIEnv* env,
@@ -258,7 +403,7 @@ Java_ai_codesec_mobilellm_NativeBridge_nativeGenerate(
                 );
 
                 if (mid) {
-                    jstring jtext = thread_env->NewStringUTF((chunk && chunk->text) ? chunk->text : "");
+                    jstring jtext = make_safe_utf8_jstring(thread_env, (chunk && chunk->text) ? chunk->text : "");
                     jboolean ret = thread_env->CallBooleanMethod(
                         c->global_callback,
                         mid,
@@ -302,30 +447,60 @@ Java_ai_codesec_mobilellm_NativeBridge_nativeGenerate(
             if (thread_env) {
                 jclass cb_class = thread_env->GetObjectClass(c->global_callback);
                 if (cb_class) {
-                    jmethodID mid = thread_env->GetMethodID(
+                    jmethodID mid_detailed = thread_env->GetMethodID(
                         cb_class,
-                        "onComplete",
-                        "(ILjava/lang/String;IIDDD)V"
+                        "onCompleteDetailed",
+                        "(ILjava/lang/String;IIDDDDDDD)V"
                     );
-
-                    if (mid) {
-                        jstring jmsg = thread_env->NewStringUTF(status.message ? status.message : "");
+                    if (mid_detailed) {
+                        jstring jmsg = make_safe_utf8_jstring(thread_env, status.message ? status.message : "");
                         thread_env->CallVoidMethod(
                             c->global_callback,
-                            mid,
+                            mid_detailed,
                             status.code,
                             jmsg,
                             metrics ? metrics->prompt_tokens : 0,
                             metrics ? metrics->completion_tokens : 0,
                             metrics ? metrics->ttft_ms : 0.0,
                             metrics ? metrics->tps : 0.0,
-                            metrics ? metrics->peak_rss_mb : 0.0
+                            metrics ? metrics->peak_rss_mb : 0.0,
+                            metrics ? metrics->prompt_tps : 0.0,
+                            metrics ? metrics->prefill_ms : 0.0,
+                            metrics ? metrics->decode_ms : 0.0,
+                            metrics ? metrics->total_ms : 0.0
                         );
                         if (thread_env->ExceptionCheck()) {
                             thread_env->ExceptionClear();
                         }
                         if (jmsg) {
                             thread_env->DeleteLocalRef(jmsg);
+                        }
+                    } else {
+                        thread_env->ExceptionClear();
+                        jmethodID mid = thread_env->GetMethodID(
+                            cb_class,
+                            "onComplete",
+                            "(ILjava/lang/String;IIDDD)V"
+                        );
+                        if (mid) {
+                            jstring jmsg = make_safe_utf8_jstring(thread_env, status.message ? status.message : "");
+                            thread_env->CallVoidMethod(
+                                c->global_callback,
+                                mid,
+                                status.code,
+                                jmsg,
+                                metrics ? metrics->prompt_tokens : 0,
+                                metrics ? metrics->completion_tokens : 0,
+                                metrics ? metrics->ttft_ms : 0.0,
+                                metrics ? metrics->tps : 0.0,
+                                metrics ? metrics->peak_rss_mb : 0.0
+                            );
+                            if (thread_env->ExceptionCheck()) {
+                                thread_env->ExceptionClear();
+                            }
+                            if (jmsg) {
+                                thread_env->DeleteLocalRef(jmsg);
+                            }
                         }
                     }
                     thread_env->DeleteLocalRef(cb_class);
@@ -411,6 +586,104 @@ Java_ai_codesec_mobilellm_NativeBridge_nativeDetectHardware(JNIEnv* env, jclass 
     char buf[512];
     mllm_detect_hardware(buf, sizeof(buf));
     return env->NewStringUTF(buf);
+}
+
+JNIEXPORT jstring JNICALL
+Java_ai_codesec_mobilellm_NativeBridge_nativeGetGenerationDiagnostics(
+    JNIEnv* env,
+    jclass /*clazz*/,
+    jlong engine_handle,
+    jlong session_handle
+) {
+    char buf[4096];
+    mllm_status_t st = mllm_get_generation_diagnostics(
+        static_cast<mllm_engine_t>(engine_handle),
+        static_cast<mllm_session_t>(session_handle),
+        buf,
+        sizeof(buf)
+    );
+    if (st.code != 0) {
+        throw_java_exception(env, st.code, st.message);
+        return nullptr;
+    }
+    return env->NewStringUTF(buf);
+}
+
+JNIEXPORT jlongArray JNICALL
+Java_ai_codesec_mobilellm_NativeBridge_nativeGetProcessMemory(
+    JNIEnv* env,
+    jclass /*clazz*/,
+    jlong engine_handle
+) {
+    mllm_process_memory_t mem;
+    std::memset(&mem, 0, sizeof(mem));
+    mllm_status_t st = mllm_get_process_memory(
+        static_cast<mllm_engine_t>(engine_handle),
+        &mem
+    );
+    if (st.code != 0) {
+        return nullptr;
+    }
+
+    jlongArray result = env->NewLongArray(5);
+    if (!result) return nullptr;
+
+    jlong vals[5];
+    vals[0] = static_cast<jlong>(mem.current_rss_bytes);
+    vals[1] = static_cast<jlong>(mem.peak_rss_bytes);
+    vals[2] = static_cast<jlong>(mem.vmsize_bytes);
+    vals[3] = static_cast<jlong>(mem.model_allocated_bytes);
+    vals[4] = static_cast<jlong>(mem.kv_allocated_bytes);
+
+    env->SetLongArrayRegion(result, 0, 5, vals);
+    return result;
+}
+
+JNIEXPORT jintArray JNICALL
+Java_ai_codesec_mobilellm_NativeBridge_nativeGetSessionContextTelemetry(
+    JNIEnv* env,
+    jclass /*clazz*/,
+    jlong engine_handle,
+    jlong session_handle
+) {
+    mllm_context_telemetry_t telem;
+    std::memset(&telem, 0, sizeof(telem));
+    mllm_status_t st = mllm_get_session_telemetry(
+        static_cast<mllm_engine_t>(engine_handle),
+        static_cast<mllm_session_t>(session_handle),
+        &telem
+    );
+    if (st.code != 0) {
+        return nullptr;
+    }
+
+    jintArray result = env->NewIntArray(4);
+    if (!result) return nullptr;
+
+    jint vals[4];
+    vals[0] = static_cast<jint>(telem.context_capacity);
+    vals[1] = static_cast<jint>(telem.used_tokens);
+    vals[2] = static_cast<jint>(telem.remaining_capacity);
+    vals[3] = telem.is_available ? 1 : 0;
+
+    env->SetIntArrayRegion(result, 0, 4, vals);
+    return result;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_ai_codesec_mobilellm_NativeBridge_nativeSetSessionThreads(
+    JNIEnv* /*env*/,
+    jclass /*clazz*/,
+    jlong engine_handle,
+    jlong session_handle,
+    jint n_threads
+) {
+    mllm_status_t st = mllm_set_session_threads(
+        static_cast<mllm_engine_t>(engine_handle),
+        static_cast<mllm_session_t>(session_handle),
+        static_cast<uint32_t>(n_threads)
+    );
+    return (st.code == 0) ? JNI_TRUE : JNI_FALSE;
 }
 
 } // extern "C"

@@ -1,0 +1,190 @@
+{
+  "initial_rss_mb": 497.7265625,
+  "final_rss_mb": 489.2265625,
+  "memory_growth_mb": -8.5,
+  "first_5_median_tps": 150.896,
+  "last_5_median_tps": 150.983,
+  "stability_ratio_percent": 100.05765560385962,
+  "cycles": [
+    {
+      "cycle": 1,
+      "vulkan_decode_tps": 1.7917791381363168,
+      "vulkan_rss_mb": 402.16015625,
+      "cpu_decode_tps": 145.9516656733845,
+      "cpu_ttft_ms": 145.257,
+      "cpu_rss_mb": 488.1953125,
+      "thread_count": 26
+    },
+    {
+      "cycle": 2,
+      "vulkan_decode_tps": 1.8011697697069362,
+      "vulkan_rss_mb": 401.6875,
+      "cpu_decode_tps": 153.75744762636938,
+      "cpu_ttft_ms": 121.744,
+      "cpu_rss_mb": 487.94140625,
+      "thread_count": 26
+    },
+    {
+      "cycle": 3,
+      "vulkan_decode_tps": 1.7980437284234754,
+      "vulkan_rss_mb": 404.17578125,
+      "cpu_decode_tps": 150.89594467148694,
+      "cpu_ttft_ms": 138.111,
+      "cpu_rss_mb": 488.28515625,
+      "thread_count": 26
+    },
+    {
+      "cycle": 4,
+      "vulkan_decode_tps": 1.7942175955331159,
+      "vulkan_rss_mb": 403.1015625,
+      "cpu_decode_tps": 152.2205167886545,
+      "cpu_ttft_ms": 129.125,
+      "cpu_rss_mb": 487.94140625,
+      "thread_count": 26
+    },
+    {
+      "cycle": 5,
+      "vulkan_decode_tps": 1.790128070237465,
+      "vulkan_rss_mb": 404.640625,
+      "cpu_decode_tps": 150.7045437419938,
+      "cpu_ttft_ms": 125.003,
+      "cpu_rss_mb": 488.83984375,
+      "thread_count": 26
+    },
+    {
+      "cycle": 6,
+      "vulkan_decode_tps": 1.7975952669316624,
+      "vulkan_rss_mb": 403.59765625,
+      "cpu_decode_tps": 153.19214124315423,
+      "cpu_ttft_ms": 111.149,
+      "cpu_rss_mb": 488.15625,
+      "thread_count": 26
+    },
+    {
+      "cycle": 7,
+      "vulkan_decode_tps": 1.7963125296391569,
+      "vulkan_rss_mb": 402.00390625,
+      "cpu_decode_tps": 150.7556627595824,
+      "cpu_ttft_ms": 140.225,
+      "cpu_rss_mb": 488.06640625,
+      "thread_count": 26
+    },
+    {
+      "cycle": 8,
+      "vulkan_decode_tps": 1.8135144913409218,
+      "vulkan_rss_mb": 404.09375,
+      "cpu_decode_tps": 153.51943300156077,
+      "cpu_ttft_ms": 124.393,
+      "cpu_rss_mb": 489.296875,
+      "thread_count": 26
+    },
+    {
+      "cycle": 9,
+      "vulkan_decode_tps": 1.7968927232583054,
+      "vulkan_rss_mb": 404,
+      "cpu_decode_tps": 145.12208395312558,
+      "cpu_ttft_ms": 149.288,
+      "cpu_rss_mb": 488.3984375,
+      "thread_count": 26
+    },
+    {
+      "cycle": 10,
+      "vulkan_decode_tps": 1.8046030008743301,
+      "vulkan_rss_mb": 405.39453125,
+      "cpu_decode_tps": 151.2554199858828,
+      "cpu_ttft_ms": 112.728,
+      "cpu_rss_mb": 489.1640625,
+      "thread_count": 26
+    },
+    {
+      "cycle": 11,
+      "vulkan_decode_tps": 1.796703049903427,
+      "vulkan_rss_mb": 429.59765625,
+      "cpu_decode_tps": 150.2479090499324,
+      "cpu_ttft_ms": 125.99,
+      "cpu_rss_mb": 503.1640625,
+      "thread_count": 26
+    },
+    {
+      "cycle": 12,
+      "vulkan_decode_tps": 1.8097221895466826,
+      "vulkan_rss_mb": 404.76171875,
+      "cpu_decode_tps": 151.6836889473152,
+      "cpu_ttft_ms": 125.202,
+      "cpu_rss_mb": 489.03515625,
+      "thread_count": 26
+    },
+    {
+      "cycle": 13,
+      "vulkan_decode_tps": 1.803540349706474,
+      "vulkan_rss_mb": 403.98046875,
+      "cpu_decode_tps": 149.43029699271528,
+      "cpu_ttft_ms": 126.208,
+      "cpu_rss_mb": 490.10546875,
+      "thread_count": 26
+    },
+    {
+      "cycle": 14,
+      "vulkan_decode_tps": 1.789180823559933,
+      "vulkan_rss_mb": 405.62890625,
+      "cpu_decode_tps": 151.23635722027575,
+      "cpu_ttft_ms": 125.385,
+      "cpu_rss_mb": 490.0234375,
+      "thread_count": 26
+    },
+    {
+      "cycle": 15,
+      "vulkan_decode_tps": 1.795723842813109,
+      "vulkan_rss_mb": 404.98046875,
+      "cpu_decode_tps": 153.0202369263335,
+      "cpu_ttft_ms": 127.236,
+      "cpu_rss_mb": 489.71484375,
+      "thread_count": 26
+    },
+    {
+      "cycle": 16,
+      "vulkan_decode_tps": 1.7991071930554463,
+      "vulkan_rss_mb": 405.60546875,
+      "cpu_decode_tps": 150.8466266923106,
+      "cpu_ttft_ms": 125.748,
+      "cpu_rss_mb": 488.1015625,
+      "thread_count": 26
+    },
+    {
+      "cycle": 17,
+      "vulkan_decode_tps": 1.8063379884168578,
+      "vulkan_rss_mb": 402.36328125,
+      "cpu_decode_tps": 150.98327860189485,
+      "cpu_ttft_ms": 124.483,
+      "cpu_rss_mb": 488.22265625,
+      "thread_count": 26
+    },
+    {
+      "cycle": 18,
+      "vulkan_decode_tps": 1.7951734070192176,
+      "vulkan_rss_mb": 401.5703125,
+      "cpu_decode_tps": 151.30882130428202,
+      "cpu_ttft_ms": 124.766,
+      "cpu_rss_mb": 487.63671875,
+      "thread_count": 26
+    },
+    {
+      "cycle": 19,
+      "vulkan_decode_tps": 1.811263614476162,
+      "vulkan_rss_mb": 403.7109375,
+      "cpu_decode_tps": 151.02888427411742,
+      "cpu_ttft_ms": 127.022,
+      "cpu_rss_mb": 487.70703125,
+      "thread_count": 26
+    },
+    {
+      "cycle": 20,
+      "vulkan_decode_tps": 1.802236936485566,
+      "vulkan_rss_mb": 404.48046875,
+      "cpu_decode_tps": 146.40752534680283,
+      "cpu_ttft_ms": 130.563,
+      "cpu_rss_mb": 489.0078125,
+      "thread_count": 26
+    }
+  ]
+}

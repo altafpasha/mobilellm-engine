@@ -54,6 +54,7 @@ typedef struct {
     bool use_mmap;
     bool use_mlock;
     float memory_budget_mb;
+    int32_t n_gpu_layers; // -1 = auto (all for GPU, 0 for CPU), >= 0 = explicit layer count
 } mllm_model_config_t;
 
 /**
@@ -88,6 +89,11 @@ typedef struct {
 
 /**
  * @brief Telemetry metrics passed to completion callback.
+ * 
+ * Note on ttft_ms (Review Item R1):
+ * Preserves the public backward-compatible contract: time elapsed in milliseconds
+ * from request submission (enqueue) to first token delivery (end_to_end_ttft_ms).
+ * Binary ABI size (72 bytes) and 8-byte alignment are frozen and compatible with all clients.
  */
 typedef struct {
     uint32_t prompt_tokens;
@@ -95,7 +101,32 @@ typedef struct {
     double ttft_ms;
     double tps;
     double peak_rss_mb;
+    double prompt_tps;
+    double prefill_ms;
+    double decode_ms;
+    double total_ms;
 } mllm_metrics_t;
+
+/**
+ * @brief Process resident and virtual memory metrics.
+ */
+typedef struct {
+    uint64_t current_rss_bytes;
+    uint64_t peak_rss_bytes;
+    uint64_t vmsize_bytes;
+    uint64_t model_allocated_bytes;
+    uint64_t kv_allocated_bytes;
+} mllm_process_memory_t;
+
+/**
+ * @brief Session context window capacity and token usage.
+ */
+typedef struct {
+    uint32_t context_capacity;
+    uint32_t used_tokens;
+    uint32_t remaining_capacity;
+    bool is_available;
+} mllm_context_telemetry_t;
 
 // Callback function signatures
 typedef bool (*mllm_token_callback_fn)(const mllm_token_chunk_t* chunk, void* user_data);
@@ -104,6 +135,7 @@ typedef void (*mllm_complete_callback_fn)(mllm_status_t status, const mllm_metri
 // Engine Lifecycle
 MOBILELLM_EXPORT mllm_status_t mllm_engine_create(mllm_engine_t* out_engine);
 MOBILELLM_EXPORT mllm_status_t mllm_engine_destroy(mllm_engine_t engine);
+MOBILELLM_EXPORT mllm_status_t mllm_engine_switch_backend(mllm_engine_t engine, int32_t target_backend);
 
 // Model Management
 MOBILELLM_EXPORT mllm_status_t mllm_model_load(mllm_engine_t engine, const mllm_model_config_t* config, mllm_model_t* out_model);
@@ -113,6 +145,8 @@ MOBILELLM_EXPORT mllm_status_t mllm_model_inspect(const char* model_path, char* 
 // Session Management
 MOBILELLM_EXPORT mllm_status_t mllm_session_create(mllm_engine_t engine, mllm_model_t model, const mllm_session_config_t* config, mllm_session_t* out_session);
 MOBILELLM_EXPORT mllm_status_t mllm_session_destroy(mllm_engine_t engine, mllm_session_t session);
+MOBILELLM_EXPORT mllm_status_t mllm_session_reset(mllm_engine_t engine, mllm_session_t session);
+MOBILELLM_EXPORT mllm_status_t mllm_get_last_logits(mllm_engine_t engine, mllm_session_t session, float* out_buffer, size_t max_len, size_t* out_len);
 
 // Generation Operations
 MOBILELLM_EXPORT mllm_status_t mllm_generate(
@@ -131,6 +165,18 @@ MOBILELLM_EXPORT mllm_status_t mllm_cancel(mllm_engine_t engine, mllm_gen_handle
 // Hardware Detection & System Telemetry
 MOBILELLM_EXPORT mllm_status_t mllm_get_version(char* buffer, size_t max_len);
 MOBILELLM_EXPORT mllm_status_t mllm_detect_hardware(char* json_buffer, size_t max_len);
+MOBILELLM_EXPORT mllm_status_t mllm_get_process_memory(mllm_engine_t engine, mllm_process_memory_t* out_memory);
+MOBILELLM_EXPORT mllm_status_t mllm_get_session_telemetry(mllm_engine_t engine, mllm_session_t session, mllm_context_telemetry_t* out_telemetry);
+MOBILELLM_EXPORT mllm_status_t mllm_set_session_threads(mllm_engine_t engine, mllm_session_t session, uint32_t n_threads);
+
+/**
+ * @brief Serializes the structured diagnostics of the session's most recent generation to JSON.
+ *
+ * Returns a default ("idle") profile when no generation has completed. The buffer is truncated and
+ * null-terminated safely if @p max_len is too small; callers should provide at least ~2 KB.
+ */
+MOBILELLM_EXPORT mllm_status_t mllm_get_generation_diagnostics(mllm_engine_t engine, mllm_session_t session, char* json_buffer, size_t max_len);
+
 MOBILELLM_EXPORT const char* mllm_get_last_error(void);
 
 #ifdef __cplusplus

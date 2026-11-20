@@ -227,6 +227,16 @@ Result<ModelMetadata> ModelLoader::inspect_file(const std::string& filepath) noe
             } else {
                 skip_value(file, val_type_raw);
             }
+        } else if (key.find(".attention.head_count_kv") != std::string::npos) {
+            if (val_type == GGUFType::UINT32) {
+                file.read(reinterpret_cast<char*>(&meta.head_count_kv), sizeof(uint32_t));
+            } else if (val_type == GGUFType::UINT64) {
+                uint64_t val = 0;
+                file.read(reinterpret_cast<char*>(&val), sizeof(val));
+                meta.head_count_kv = static_cast<uint32_t>(val);
+            } else {
+                skip_value(file, val_type_raw);
+            }
         } else if (key.find(".attention.head_count") != std::string::npos) {
             if (val_type == GGUFType::UINT32) {
                 file.read(reinterpret_cast<char*>(&meta.head_count), sizeof(uint32_t));

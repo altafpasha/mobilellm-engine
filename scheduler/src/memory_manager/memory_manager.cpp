@@ -2,6 +2,7 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <sys/resource.h>
 
 #if defined(__APPLE__)
 #include <sys/types.h>
@@ -91,21 +92,96 @@ MemoryInfo MemoryBudgetManager::query_system_memory() noexcept {
     return info;
 }
 
+ProcessMemoryStats MemoryBudgetManager::query_process_memory() noexcept {
+    ProcessMemoryStats stats;
+
+#if defined(__APPLE__)
+    struct mach_task_basic_info info;
+    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, reinterpret_cast<task_info_t>(&info), &count) == KERN_SUCCESS) {
+        stats.current_rss_bytes = info.resident_size;
+        stats.vmsize_bytes = info.virtual_size;
+    }
+    struct rusage usage;
+    if (getrusage(RUSAGE_SELF, &usage) == 0) {
+        // ru_maxrss is in bytes on macOS
+        stats.peak_rss_bytes = static_cast<uint64_t>(usage.ru_maxrss);
+    }
+#else
+    std::ifstream file("/proc/self/status");
+    if (file.is_open()) {
+        std::string line;
+        while (std::getline(file, line)) {
+            std::istringstream iss(line);
+            std::string key;
+            uint64_t value_kb = 0;
+            std::string unit;
+            if (iss >> key >> value_kb >> unit) {
+                if (key == "VmRSS:") {
+                    stats.current_rss_bytes = value_kb * 1024ULL;
+                } else if (key == "VmHWM:") {
+                    stats.peak_rss_bytes = value_kb * 1024ULL;
+                } else if (key == "VmSize:") {
+                    stats.vmsize_bytes = value_kb * 1024ULL;
+                }
+            }
+        }
+    }
+    if (stats.peak_rss_bytes == 0) {
+        struct rusage usage;
+        if (getrusage(RUSAGE_SELF, &usage) == 0) {
+            // ru_maxrss is in kilobytes on Linux/Android
+            stats.peak_rss_bytes = static_cast<uint64_t>(usage.ru_maxrss) * 1024ULL;
+        }
+    }
+#endif
+
+    if (stats.peak_rss_bytes < stats.current_rss_bytes) {
+        stats.peak_rss_bytes = stats.current_rss_bytes;
+    }
+
+    return stats;
+}
+
 Status MemoryBudgetManager::recalculate_budget(uint64_t custom_ceiling_bytes) noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
 
     uint64_t avail = 0;
+    MemoryInfo sys_info;
     if (simulated_) {
         avail = sim_available_ram_;
     } else {
-        MemoryInfo sys_info = query_system_memory();
+        sys_info = query_system_memory();
         avail = sys_info.available_ram_bytes;
     }
 
     uint64_t effective_avail = (avail > safety_margin_) ? (avail - safety_margin_) : 0;
     uint64_t calculated_ceiling = static_cast<uint64_t>(effective_avail * MAX_AVAILABLE_RAM_RATIO);
 
-    if (custom_ceiling_bytes > 0 && custom_ceiling_bytes < calculated_ceiling) {
+    if (!simulated_) {
+        // On real hardware (Linux/Android), allow up to 85% of available RAM if it provides more headroom
+        // while preserving at least a 256MB safety cushion.
+        uint64_t min_safety_bytes = static_cast<uint64_t>(256ULL * 1024ULL * 1024ULL);
+        uint64_t mobile_ceiling = static_cast<uint64_t>(avail * 0.85f);
+        if (mobile_ceiling > calculated_ceiling && avail > min_safety_bytes) {
+            uint64_t max_safe = avail - min_safety_bytes;
+            calculated_ceiling = (mobile_ceiling < max_safe) ? mobile_ceiling : max_safe;
+        }
+
+        // On mobile devices, cached background processes are evicted by Android lmkd on demand.
+        // If total_ram_bytes is known, allow up to 75% of total RAM minus OS reserve (1.5 GB).
+        if (sys_info.total_ram_bytes > 0) {
+            uint64_t os_reserve = 1536ULL * 1024ULL * 1024ULL; // 1.5 GB for OS
+            if (sys_info.total_ram_bytes > os_reserve) {
+                uint64_t ram_based_ceiling = static_cast<uint64_t>((sys_info.total_ram_bytes - os_reserve) * 0.75f);
+                if (ram_based_ceiling > calculated_ceiling) {
+                    calculated_ceiling = ram_based_ceiling;
+                }
+            }
+        }
+    }
+
+    if (custom_ceiling_bytes > 0) {
         budget_ceiling_ = custom_ceiling_bytes;
     } else {
         budget_ceiling_ = calculated_ceiling;

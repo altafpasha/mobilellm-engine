@@ -12,54 +12,61 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
+// Obsidian Cyber-Lime Studio Palette
+val ObsidianBackground = Color(0xFF0D1110)
+val ObsidianSurface = Color(0xFF131816)
+val ObsidianCard = Color(0xFF1A211E)
+val ObsidianCardHighlight = Color(0xFF222C28)
+val ObsidianBorder = Color(0xFF28342F)
+
+val CyberLime = Color(0xFFA3E635)
+val CyberLimeDark = Color(0xFF65A30D)
+val CyberLimeGlow = Color(0x33A3E635)
+val CyberLimeContainer = Color(0xFF1E281F)
+
+val ColdBlue = Color(0xFF38BDF8)
+val ColdBlueContainer = Color(0xFF132832)
+val MintSuccess = Color(0xFF4ADE80)
+val CrimsonError = Color(0xFFF87171)
+
 private val DarkColorScheme = darkColorScheme(
-    primary = Color(0xFF10B981),      // Emerald 500
-    onPrimary = Color(0xFF022C22),
-    primaryContainer = Color(0xFF064E3B),
-    onPrimaryContainer = Color(0xFFA7F3D0),
-    secondary = Color(0xFF6366F1),    // Indigo 500
-    onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFF312E81),
-    onSecondaryContainer = Color(0xFFC7D2FE),
-    background = Color(0xFF0F172A),   // Slate 900
-    onBackground = Color(0xFFF8FAFC),
-    surface = Color(0xFF1E293B),      // Slate 800
-    onSurface = Color(0xFFF1F5F9),
-    surfaceVariant = Color(0xFF334155),
-    onSurfaceVariant = Color(0xFFCBD5E1),
-    error = Color(0xFFEF4444)
+    primary = CyberLime,
+    onPrimary = Color(0xFF0D1110),
+    primaryContainer = CyberLimeContainer,
+    onPrimaryContainer = CyberLime,
+    secondary = ColdBlue,
+    onSecondary = Color(0xFF0D1110),
+    secondaryContainer = ColdBlueContainer,
+    onSecondaryContainer = ColdBlue,
+    tertiary = MintSuccess,
+    background = ObsidianBackground,
+    onBackground = Color(0xFFF1F5F3),
+    surface = ObsidianSurface,
+    onSurface = Color(0xFFF1F5F3),
+    surfaceVariant = ObsidianCard,
+    onSurfaceVariant = Color(0xFF94A39D),
+    outline = ObsidianBorder,
+    outlineVariant = Color(0xFF1E2623),
+    error = CrimsonError
 )
 
-private val LightColorScheme = lightColorScheme(
-    primary = Color(0xFF059669),
-    onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFD1FAE5),
-    onPrimaryContainer = Color(0xFF065F46),
-    secondary = Color(0xFF4F46E5),
-    onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFFE0E7FF),
-    onSecondaryContainer = Color(0xFF3730A3),
-    background = Color(0xFFF8FAFC),
-    onBackground = Color(0xFF0F172A),
-    surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF1E293B),
-    surfaceVariant = Color(0xFFE2E8F0),
-    onSurfaceVariant = Color(0xFF475569),
-    error = Color(0xFFDC2626)
-)
+// Default to dark theme for developer inference studio aesthetic
+private val LightColorScheme = DarkColorScheme
 
 @Composable
 fun NexaTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean = true, // Force dark-first studio theme
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val colorScheme = DarkColorScheme
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
             window.statusBarColor = colorScheme.background.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            window.navigationBarColor = colorScheme.background.toArgb()
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
+            WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = false
         }
     }
 
@@ -68,4 +75,3 @@ fun NexaTheme(
         content = content
     )
 }
-

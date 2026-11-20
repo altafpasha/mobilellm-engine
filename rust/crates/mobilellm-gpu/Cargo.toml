@@ -1,0 +1,11 @@
+[package]
+name = "mobilellm-gpu"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Vulkan GPU capability introspection and deterministic micro-compute for MobileLLM"
+
+[dependencies]
+mobilellm-core = { path = "../mobilellm-core" }
+ash = { version = "0.38", default-features = false, features = ["loaded"] }

@@ -5,6 +5,8 @@ import android.app.Application
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
+import android.os.Build
+import android.os.PowerManager
 import android.provider.OpenableColumns
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -19,6 +21,7 @@ import ai.codesec.mobilellm.models.SamplingParams
 import ai.codesec.mobilellm.models.SessionConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,6 +29,8 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
@@ -51,6 +56,19 @@ data class ChatMessage(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+data class BenchmarkRun(
+    val threads: Int,
+    val promptTokens: Int,
+    val completionTokens: Int,
+    val promptTokensPerSecond: Double,
+    val tokensPerSecond: Double,
+    val timeToFirstTokenMs: Double,
+    val totalDurationMs: Double,
+    val peakRssMb: Double,
+    val thermalStatusName: String,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 data class ChatUiState(
     val currentScreen: NexaScreen = NexaScreen.CHAT,
     val messages: List<ChatMessage> = emptyList(),
@@ -61,19 +79,40 @@ data class ChatUiState(
     val modelMetadataMap: Map<String, ModelMetadata> = emptyMap(),
     val samplingParams: SamplingParams = SamplingParams(),
     val preferredBackend: BackendType = BackendType.CPU_NEON,
-    val threadCount: Int = Runtime.getRuntime().availableProcessors().coerceAtLeast(1),
+    val gpuLayers: Int = -1,
+    val threadCount: Int = run {
+        val totalCores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        // On 8+ core mobile SoCs (e.g. Snapdragon big.LITTLE / DynamIQ), clamp default inference threads
+        // to 4 performance cores. Using all 8 cores causes thread barrier stalling on slow Cortex-A510
+        // efficiency cores and severe memory bandwidth / thermal thrashing.
+        if (totalCores >= 8) 4 else minOf(4, totalCores)
+    },
     val engineVersion: String = "0.1.0-dev",
     val hardwareInfo: String = "Detecting...",
     val lastMetrics: GenerationMetrics? = null,
+    val generationDiagnostics: String = "",
     val systemTotalRamMb: Long = 0L,
     val systemAvailRamMb: Long = 0L,
     val isLowMemory: Boolean = false,
     val nativeRssMb: Double = 0.0,
+    val nativePeakRssMb: Double = 0.0,
+    val nativeVmSizeMb: Double = 0.0,
+    val modelMemoryMb: Double = 0.0,
+    val kvCacheMemoryMb: Double = 0.0,
+    val contextCapacity: Int = 0,
+    val usedContextTokens: Int = 0,
+    val remainingContextTokens: Int = 0,
+    val isContextAvailable: Boolean = false,
+    val thermalStatus: Int = 0,
+    val thermalStatusName: String = "Normal (0)",
+    val isThermalThrottling: Boolean = false,
     val jvmHeapMb: Double = 0.0,
     val freeStorageBytes: Long = 0L,
     val modelsStorageBytes: Long = 0L,
     val errorMessage: String? = null,
-    val importProgress: Float? = null
+    val importProgress: Float? = null,
+    val benchmarkHistory: List<BenchmarkRun> = emptyList(),
+    val isBenchmarking: Boolean = false
 )
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
@@ -82,17 +121,107 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val client: MobileLLMClient = MobileLLMClient.getInstance(application)
     private var activeSession: ModelSession? = null
     private var generationJob: Job? = null
+    private var benchmarkJob: Job? = null
+    private var loadModelJob: Job? = null
+    private val loadMutex = Mutex()
+    private var thermalListener: PowerManager.OnThermalStatusChangedListener? = null
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
+    private val modelsDirs: List<File>
+        get() {
+            val app = getApplication<Application>()
+            val dirs = mutableListOf<File>()
+            dirs.add(File(app.filesDir, "models").apply { mkdirs() })
+            app.getExternalFilesDir("models")?.let { dirs.add(it.apply { mkdirs() }) }
+            try {
+                val downloads = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                if (downloads != null && downloads.exists() && downloads.canRead() && !dirs.contains(downloads)) {
+                    dirs.add(downloads)
+                }
+            } catch (_: Exception) {}
+            try {
+                val directSdDownload = File("/sdcard/Download")
+                if (directSdDownload.exists() && directSdDownload.canRead() && !dirs.contains(directSdDownload)) {
+                    dirs.add(directSdDownload)
+                }
+            } catch (_: Exception) {}
+            return dirs
+        }
+
     private val modelsDir: File
-        get() = File(getApplication<Application>().filesDir, "models").apply { mkdirs() }
+        get() = modelsDirs.first()
 
     init {
-        refreshModelsList()
-        refreshSystemStats()
-        initializeEngine()
+        initThermalMonitoring(application)
+        viewModelScope.launch {
+            try {
+                client.initialize()
+                val version = client.getVersion()
+                val hw = client.detectHardware()
+                _uiState.update {
+                    it.copy(
+                        engineVersion = version,
+                        hardwareInfo = hw
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to initialize engine", e)
+                _uiState.update { it.copy(errorMessage = "Engine init failed: ${e.message}") }
+            } finally {
+                refreshSystemStats()
+                refreshModelsList()
+            }
+        }
+    }
+
+    private fun initThermalMonitoring(app: Application) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val powerManager = app.getSystemService(Context.POWER_SERVICE) as? PowerManager
+            if (powerManager != null) {
+                try {
+                    val initialStatus = powerManager.currentThermalStatus
+                    updateThermalStatus(initialStatus)
+                    val listener = PowerManager.OnThermalStatusChangedListener { status ->
+                        updateThermalStatus(status)
+                    }
+                    powerManager.addThermalStatusListener(app.mainExecutor, listener)
+                    thermalListener = listener
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not initialize thermal status listener: ${e.message}")
+                }
+            }
+        } else {
+            _uiState.update {
+                it.copy(
+                    thermalStatus = 0,
+                    thermalStatusName = "Unsupported (< API 29)",
+                    isThermalThrottling = false
+                )
+            }
+        }
+    }
+
+    private fun updateThermalStatus(status: Int) {
+        val name = when (status) {
+            PowerManager.THERMAL_STATUS_NONE -> "Normal (0 - None)"
+            PowerManager.THERMAL_STATUS_LIGHT -> "Light (1 - Light Throttling)"
+            PowerManager.THERMAL_STATUS_MODERATE -> "Moderate (2 - Moderate Throttling)"
+            PowerManager.THERMAL_STATUS_SEVERE -> "Severe (3 - Performance Impacted)"
+            PowerManager.THERMAL_STATUS_CRITICAL -> "Critical (4 - Significant Throttling)"
+            PowerManager.THERMAL_STATUS_EMERGENCY -> "Emergency (5 - Shutdown Imminent)"
+            PowerManager.THERMAL_STATUS_SHUTDOWN -> "Shutdown (6 - Thermal Shutdown)"
+            else -> "Status $status"
+        }
+        val isThrottling = status >= PowerManager.THERMAL_STATUS_MODERATE
+        _uiState.update {
+            it.copy(
+                thermalStatus = status,
+                thermalStatusName = name,
+                isThermalThrottling = isThrottling
+            )
+        }
     }
 
     fun setScreen(screen: NexaScreen) {
@@ -118,40 +247,43 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val freeSpace = modelsDir.freeSpace
         val modelsSize = _uiState.value.availableModels.sumOf { it.length() }
 
+        val procMem = try {
+            client.getProcessMemory()
+        } catch (e: Exception) {
+            MobileLLMClient.ProcessMemorySnapshot()
+        }
+
+        val contextTelem = try {
+            activeSession?.getContextTelemetry()
+        } catch (e: Exception) {
+            null
+        }
+
         _uiState.update {
             it.copy(
                 systemTotalRamMb = totalRamMb,
                 systemAvailRamMb = availRamMb,
                 isLowMemory = lowMem,
                 jvmHeapMb = jvmHeapMb,
+                nativeRssMb = procMem.currentRssMb,
+                nativePeakRssMb = procMem.peakRssMb,
+                nativeVmSizeMb = procMem.vmSizeMb,
+                modelMemoryMb = procMem.modelAllocatedMb,
+                kvCacheMemoryMb = procMem.kvAllocatedMb,
+                contextCapacity = contextTelem?.contextCapacity ?: it.contextCapacity,
+                usedContextTokens = contextTelem?.usedTokens ?: it.usedContextTokens,
+                remainingContextTokens = contextTelem?.remainingCapacity ?: it.remainingContextTokens,
+                isContextAvailable = contextTelem?.isAvailable ?: it.isContextAvailable,
                 freeStorageBytes = freeSpace,
                 modelsStorageBytes = modelsSize
             )
         }
     }
 
-    private fun initializeEngine() {
-        viewModelScope.launch {
-            try {
-                client.initialize()
-                val version = client.getVersion()
-                val hw = client.detectHardware()
-                _uiState.update {
-                    it.copy(
-                        engineVersion = version,
-                        hardwareInfo = hw
-                    )
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to initialize engine", e)
-                _uiState.update { it.copy(errorMessage = "Engine init failed: ${e.message}") }
-            }
-        }
-    }
-
     fun refreshModelsList() {
-        val files = modelsDir.listFiles { f -> f.extension.equals("gguf", ignoreCase = true) }
-            ?.toList() ?: emptyList()
+        val files = modelsDirs.flatMap { dir ->
+            dir.listFiles { f -> f.extension.equals("gguf", ignoreCase = true) }?.toList() ?: emptyList()
+        }.filter { it.canRead() && it.length() > 0 }.distinctBy { it.name }
         val totalBytes = files.sumOf { it.length() }
         val freeBytes = modelsDir.freeSpace
 
@@ -179,8 +311,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(modelMetadataMap = metaMap) }
         }
 
-        // Auto-load first available model if none is currently active
-        if (!_uiState.value.isModelLoaded && activeSession == null && files.isNotEmpty()) {
+        // Auto-load first available model if none is currently active and not already loading
+        if (!_uiState.value.isModelLoaded && activeSession == null && files.isNotEmpty() && loadModelJob?.isActive != true) {
             loadModel(files.first())
         }
     }
@@ -219,6 +351,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                 }
+                targetFile.setReadable(true, false)
 
                 // Verify file header validity
                 val isValidGguf = try {
@@ -254,39 +387,47 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadModel(file: File) {
-        viewModelScope.launch {
-            try {
-                activeSession?.close()
-                activeSession = null
-                _uiState.update { it.copy(isModelLoaded = false, loadedModelName = null) }
+        loadModelJob?.cancel()
+        loadModelJob = viewModelScope.launch {
+            loadMutex.withLock {
+                try {
+                    // Ensure previous session and model weights are completely unloaded to release memory budget
+                    activeSession?.close()
+                    activeSession = null
+                    client.unloadAllModels()
+                    _uiState.update { it.copy(isModelLoaded = false, loadedModelName = null) }
+                    refreshSystemStats()
 
-                val config = ModelConfig(
-                    modelPath = file.absolutePath,
-                    preferredBackend = _uiState.value.preferredBackend,
-                    contextLength = 2048,
-                    nThreads = _uiState.value.threadCount
-                )
-                val sessionConfig = SessionConfig(
-                    maxContextTokens = 2048,
-                    enablePrefixCaching = true
-                )
+                    val config = ModelConfig(
+                        modelPath = file.absolutePath,
+                        preferredBackend = _uiState.value.preferredBackend,
+                        contextLength = 2048,
+                        nThreads = _uiState.value.threadCount,
+                        nGpuLayers = _uiState.value.gpuLayers
+                    )
+                    val sessionConfig = SessionConfig(
+                        maxContextTokens = 2048,
+                        enablePrefixCaching = true
+                    )
 
-                val session = client.loadModel(config, sessionConfig)
-                activeSession = session
-                _uiState.update {
-                    it.copy(
-                        isModelLoaded = true,
-                        loadedModelName = file.name,
-                        errorMessage = null
-                    )
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to load model", e)
-                _uiState.update {
-                    it.copy(
-                        isModelLoaded = false,
-                        errorMessage = "Load model error: ${e.message}"
-                    )
+                    val session = client.loadModel(config, sessionConfig)
+                    activeSession = session
+                    _uiState.update {
+                        it.copy(
+                            isModelLoaded = true,
+                            loadedModelName = file.name,
+                            errorMessage = null
+                        )
+                    }
+                    refreshSystemStats()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to load model", e)
+                    _uiState.update {
+                        it.copy(
+                            isModelLoaded = false,
+                            errorMessage = "Load model error: ${e.message}"
+                        )
+                    }
                 }
             }
         }
@@ -295,12 +436,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     fun unloadModel() {
         activeSession?.close()
         activeSession = null
+        client.unloadAllModels()
         _uiState.update {
             it.copy(
                 isModelLoaded = false,
                 loadedModelName = null
             )
         }
+        refreshSystemStats()
     }
 
     fun regenerateLastResponse() {
@@ -346,7 +489,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
 
-        generationJob = viewModelScope.launch {
+        generationJob = viewModelScope.launch(Dispatchers.Default) {
             var fullText = ""
             var completedMetrics: GenerationMetrics? = null
 
@@ -389,11 +532,18 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
+            val diagJson = try {
+                session.getGenerationDiagnostics()
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to read generation diagnostics", e)
+                null
+            }
+
             _uiState.update { state ->
                 state.copy(
                     isGenerating = false,
                     lastMetrics = completedMetrics,
-                    nativeRssMb = completedMetrics?.peakRssMb ?: state.nativeRssMb,
+                    generationDiagnostics = diagJson ?: state.generationDiagnostics,
                     messages = state.messages.map { msg ->
                         if (msg.id == assistantMsgId) {
                             msg.copy(
@@ -422,22 +572,213 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateSettings(params: SamplingParams, backend: BackendType, threads: Int, layers: Int) {
+        val prevBackend = _uiState.value.preferredBackend
+        val prevLayers = _uiState.value.gpuLayers
+        val prevThreads = _uiState.value.threadCount
+
+        val maxCores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        val clampedThreads = threads.coerceIn(1, maxCores)
+        val finalLayers = if (backend == BackendType.CPU_NEON) 0 else layers
+
+        _uiState.update {
+            it.copy(
+                samplingParams = params,
+                preferredBackend = backend,
+                threadCount = clampedThreads,
+                gpuLayers = finalLayers
+            )
+        }
+
+        val engineChanged = (prevBackend != backend) || (prevLayers != finalLayers)
+        if (engineChanged && _uiState.value.isModelLoaded) {
+            stopGeneration()
+            val loadedName = _uiState.value.loadedModelName
+            val currentFile = _uiState.value.availableModels.firstOrNull { it.name == loadedName }
+            if (currentFile != null && currentFile.exists()) {
+                Log.i(TAG, "Engine configuration changed (backend: $prevBackend -> $backend, layers: $prevLayers -> $finalLayers). Reloading model: ${currentFile.name}")
+                loadModel(currentFile)
+            }
+        } else if (prevThreads != clampedThreads && activeSession != null) {
+            viewModelScope.launch(Dispatchers.Default) {
+                activeSession?.setThreads(clampedThreads)
+            }
+        }
+    }
+
     fun updateSamplingParams(params: SamplingParams) {
         _uiState.update { it.copy(samplingParams = params) }
     }
 
     fun updateBackend(backend: BackendType) {
+        val previous = _uiState.value.preferredBackend
         _uiState.update { it.copy(preferredBackend = backend) }
+        if (previous != backend && _uiState.value.isModelLoaded) {
+            val loadedName = _uiState.value.loadedModelName
+            val currentFile = _uiState.value.availableModels.firstOrNull { it.name == loadedName }
+            if (currentFile != null && currentFile.exists()) {
+                Log.i(TAG, "Backend changed from $previous to $backend. Reloading model: ${currentFile.name}")
+                loadModel(currentFile)
+            }
+        }
+    }
+
+    fun updateGpuLayers(layers: Int) {
+        val previous = _uiState.value.gpuLayers
+        _uiState.update { it.copy(gpuLayers = layers) }
+        if (previous != layers && _uiState.value.isModelLoaded) {
+            val loadedName = _uiState.value.loadedModelName
+            val currentFile = _uiState.value.availableModels.firstOrNull { it.name == loadedName }
+            if (currentFile != null && currentFile.exists()) {
+                Log.i(TAG, "GPU layers changed from $previous to $layers. Reloading model: ${currentFile.name}")
+                loadModel(currentFile)
+            }
+        }
     }
 
     fun updateThreads(threads: Int) {
-        _uiState.update { it.copy(threadCount = threads) }
-        // If a model is currently loaded, reload it with the new thread count
-        val loadedName = _uiState.value.loadedModelName
-        if (loadedName != null && _uiState.value.isModelLoaded) {
-            val file = File(modelsDir, loadedName)
-            if (file.exists()) {
-                loadModel(file)
+        val maxCores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        val clamped = threads.coerceIn(1, maxCores)
+        _uiState.update { it.copy(threadCount = clamped) }
+        viewModelScope.launch(Dispatchers.Default) {
+            val session = activeSession
+            if (session != null) {
+                val success = session.setThreads(clamped)
+                Log.d(TAG, "Dynamically updated CPU threads to $clamped (result: $success)")
+            }
+        }
+    }
+
+    fun stopBenchmark() {
+        benchmarkJob?.cancel()
+        benchmarkJob = null
+        stopGeneration()
+        _uiState.update {
+            it.copy(
+                isBenchmarking = false,
+                errorMessage = "Benchmark cancelled by user."
+            )
+        }
+    }
+
+    /**
+     * Agent 14: Thermal-Aware Benchmark Execution
+     *
+     * In accordance with Section 8 Thermal Safety guidelines:
+     * - Rejects benchmark execution when thermal status is SEVERE, CRITICAL, or EMERGENCY.
+     * - Default mode runs 1 Warmup (16 tok) + 1 Measured Run (32 tok) on the user's selected backend.
+     * - Extended mode (sweep across 2T..8T) applies only to CPU and enforces adaptive cooldown.
+     * - Aborts active benchmark if device thermals escalate to SEVERE or CRITICAL mid-run.
+     * - Releases resources and resets thread state upon completion or cancellation.
+     */
+    fun runBenchmark(extended: Boolean = false) {
+        val session = activeSession
+        if (session == null || _uiState.value.isGenerating || _uiState.value.isBenchmarking) {
+            return
+        }
+
+        // Section 8: Thermal Status Gate - detect severity before launching
+        val currentThermal = _uiState.value.thermalStatus
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && currentThermal >= PowerManager.THERMAL_STATUS_SEVERE) {
+            _uiState.update {
+                it.copy(
+                    errorMessage = "Benchmark blocked for thermal safety: Device thermal status is ${_uiState.value.thermalStatusName}. Please allow the device to cool down."
+                )
+            }
+            return
+        }
+
+        benchmarkJob = viewModelScope.launch(Dispatchers.Default) {
+            _uiState.update { it.copy(isBenchmarking = true, errorMessage = null) }
+            val maxCores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+            val isVulkan = _uiState.value.preferredBackend == BackendType.VULKAN
+
+            // Section 8: Default benchmark configuration:
+            // Warmup: 1, Measured runs: 1, Output tokens: 32, Threads: 4 (or clamped maxCores)
+            val threadConfigs = if (extended && !isVulkan) {
+                listOf(2, 4, 6, 8).filter { it <= maxCores }.ifEmpty { listOf(maxCores) }
+            } else {
+                listOf(minOf(4, maxCores))
+            }
+
+            val benchmarkPrompt = "Explain the fundamental principles of artificial intelligence and machine learning in simple, clear terms for mobile engineers."
+
+            try {
+                for (threads in threadConfigs) {
+                    // Check cancellation
+                    if (!coroutineContext[Job]!!.isActive) break
+
+                    // Section 8: Mid-run thermal severity check
+                    val liveThermal = _uiState.value.thermalStatus
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && liveThermal >= PowerManager.THERMAL_STATUS_SEVERE) {
+                        _uiState.update {
+                            it.copy(
+                                errorMessage = "Benchmark safely aborted: Device thermal state reached ${_uiState.value.thermalStatusName}."
+                            )
+                        }
+                        break
+                    }
+
+                    updateThreads(threads)
+
+                    // 1. Warmup iteration (16 tokens) per Section 8
+                    try {
+                        val warmupParams = SamplingParams(maxTokens = 16, temperature = 0.0f)
+                        session.generate(
+                            prompt = benchmarkPrompt,
+                            params = warmupParams
+                        ).collect {}
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Benchmark warmup failed: ${e.message}")
+                    }
+
+                    // Section 8: Cooldown between benchmark runs (2000 ms)
+                    delay(2000)
+
+                    // Check cancellation after cooldown
+                    if (!coroutineContext[Job]!!.isActive) break
+
+                    // 2. Measured iteration (32 output tokens) per Section 8
+                    var receivedMetrics: GenerationMetrics? = null
+                    try {
+                        val sampling = SamplingParams(maxTokens = 32, temperature = 0.0f)
+                        session.generate(
+                            prompt = benchmarkPrompt,
+                            params = sampling,
+                            onMetrics = { m -> receivedMetrics = m }
+                        ).collect {}
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Benchmark failed for thread count $threads: ${e.message}")
+                    }
+
+                    val finalMetrics = receivedMetrics
+                    if (finalMetrics != null) {
+                        val run = BenchmarkRun(
+                            threads = threads,
+                            promptTokens = finalMetrics.promptTokens,
+                            completionTokens = finalMetrics.completionTokens,
+                            promptTokensPerSecond = finalMetrics.promptTokensPerSecond,
+                            tokensPerSecond = finalMetrics.tokensPerSecond,
+                            timeToFirstTokenMs = finalMetrics.timeToFirstTokenMs,
+                            totalDurationMs = finalMetrics.totalDurationMs,
+                            peakRssMb = finalMetrics.peakRssMb,
+                            thermalStatusName = _uiState.value.thermalStatusName
+                        )
+                        _uiState.update { state ->
+                            state.copy(
+                                benchmarkHistory = state.benchmarkHistory + run,
+                                lastMetrics = finalMetrics
+                            )
+                        }
+                    }
+
+                    // Post-iteration cooldown
+                    delay(1500)
+                }
+            } finally {
+                _uiState.update { it.copy(isBenchmarking = false) }
+                benchmarkJob = null
+                refreshSystemStats()
             }
         }
     }
@@ -453,6 +794,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         stopGeneration()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && thermalListener != null) {
+            val powerManager = getApplication<Application>().getSystemService(Context.POWER_SERVICE) as? PowerManager
+            try {
+                thermalListener?.let { powerManager?.removeThermalStatusListener(it) }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed removing thermal listener: ${e.message}")
+            }
+            thermalListener = null
+        }
         activeSession?.close()
     }
 }

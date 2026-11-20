@@ -3,6 +3,8 @@ MobileLLM Exception hierarchy and C-ABI error code mapping.
 Authoritative source of truth matching runtime/include/mobilellm/types.h StatusCode enum.
 """
 
+from __future__ import annotations
+
 from typing import Any
 
 

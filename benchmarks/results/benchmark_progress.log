@@ -1,0 +1,7 @@
+COMPLETED: CPU_NEON_T4 - Decode: 12.83 tok/s, Prefill: 8691.72 tok/s, TTFT: 104.79 ms, RSS: 1349.24 MB
+COMPLETED: VULKAN_L4 - Decode: 1.98 tok/s, Prefill: 5723.48 tok/s, TTFT: 541.06 ms, RSS: 1021.11 MB
+COMPLETED: VULKAN_L8 - Decode: 1.09 tok/s, Prefill: 4397.01 tok/s, TTFT: 966.73 ms, RSS: 1025.67 MB
+COMPLETED: VULKAN_L12 - Decode: 0.75 tok/s, Prefill: 4400.57 tok/s, TTFT: 1382.39 ms, RSS: 857.56 MB
+COMPLETED: VULKAN_L16 - Decode: 0.57 tok/s, Prefill: 7010.71 tok/s, TTFT: 1793.79 ms, RSS: 662.84 MB
+COMPLETED: VULKAN_L20 - Decode: 0.46 tok/s, Prefill: 3879.68 tok/s, TTFT: 2218.39 ms, RSS: 557.72 MB
+COMPLETED: VULKAN_L24 - Decode: 0.38 tok/s, Prefill: 5006.52 tok/s, TTFT: 2620.18 ms, RSS: 438.93 MB

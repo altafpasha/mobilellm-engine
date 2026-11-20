@@ -1,11 +1,14 @@
 package ai.codesec.mobilellm
 
 import android.content.Context
+import ai.codesec.mobilellm.models.BackendType
 import ai.codesec.mobilellm.models.ModelConfig
 import ai.codesec.mobilellm.models.ModelMetadata
 import ai.codesec.mobilellm.models.SessionConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.io.Closeable
 import java.io.File
@@ -30,6 +33,7 @@ class MobileLLMClient private constructor() : Closeable {
     }
 
     private var engineHandle: Long = 0
+    private val initMutex = Mutex()
     private val isInitialized = AtomicBoolean(false)
     private val isClosed = AtomicBoolean(false)
     private val activeModels = mutableListOf<Long>()
@@ -48,15 +52,31 @@ class MobileLLMClient private constructor() : Closeable {
      * Initializes the native runtime engine. Safe to call multiple times.
      */
     suspend fun initialize(): Unit = withContext(Dispatchers.IO) {
-        if (isInitialized.compareAndSet(false, true)) {
-            val handle = NativeBridge.nativeInit()
-            if (handle == 0L) {
-                throw MobileLLMException(
-                    MobileLLMException.CODE_BACKEND_INIT_FAILED,
-                    "Failed to initialize native MobileLLM engine"
-                )
+        initMutex.withLock {
+            if (engineHandle == 0L && !isClosed.get()) {
+                val handle = NativeBridge.nativeInit()
+                if (handle == 0L) {
+                    throw MobileLLMException(
+                        MobileLLMException.CODE_BACKEND_INIT_FAILED,
+                        "Failed to initialize native MobileLLM engine"
+                    )
+                }
+                engineHandle = handle
+                isInitialized.set(true)
             }
-            engineHandle = handle
+        }
+    }
+
+    /**
+     * Safely transitions the engine compute backend to [targetBackend], draining
+     * in-flight inference, releasing GPU queues, and restoring CPU thread state.
+     */
+    suspend fun switchBackend(targetBackend: BackendType): Unit = withContext(Dispatchers.IO) {
+        check(!isClosed.get()) { "MobileLLMClient is closed" }
+        initMutex.withLock {
+            if (engineHandle != 0L) {
+                NativeBridge.nativeSwitchBackend(engineHandle, targetBackend.code)
+            }
         }
     }
 
@@ -72,7 +92,7 @@ class MobileLLMClient private constructor() : Closeable {
         sessionConfig: SessionConfig = SessionConfig(config.contextLength)
     ): ModelSession = withContext(Dispatchers.IO) {
         check(!isClosed.get()) { "MobileLLMClient is closed" }
-        if (!isInitialized.get()) {
+        if (engineHandle == 0L) {
             initialize()
         }
 
@@ -84,14 +104,15 @@ class MobileLLMClient private constructor() : Closeable {
             )
         }
 
-        val modelHandle = NativeBridge.nativeLoadModel(
+        val modelHandle = NativeBridge.nativeLoadModelWithLayers(
             engineHandle = engineHandle,
             modelPath = config.modelPath,
             backend = config.preferredBackend.code,
             contextLength = config.contextLength,
             nThreads = config.nThreads,
             useMmap = config.useMmap,
-            memoryBudgetMb = config.memoryBudgetMb
+            memoryBudgetMb = config.memoryBudgetMb,
+            nGpuLayers = config.nGpuLayers
         )
 
         if (modelHandle == 0L) {
@@ -105,21 +126,60 @@ class MobileLLMClient private constructor() : Closeable {
             activeModels.add(modelHandle)
         }
 
-        val sessionHandle = NativeBridge.nativeCreateSession(
-            engineHandle = engineHandle,
-            modelHandle = modelHandle,
-            maxContextTokens = sessionConfig.maxContextTokens,
-            enablePrefixCaching = sessionConfig.enablePrefixCaching
-        )
-
-        if (sessionHandle == 0L) {
-            throw MobileLLMException(
-                MobileLLMException.CODE_SESSION_NOT_FOUND,
-                "Failed to create native inference session"
+        val sessionHandle = try {
+            val handle = NativeBridge.nativeCreateSession(
+                engineHandle = engineHandle,
+                modelHandle = modelHandle,
+                maxContextTokens = sessionConfig.maxContextTokens,
+                enablePrefixCaching = sessionConfig.enablePrefixCaching
             )
+            if (handle == 0L) {
+                throw MobileLLMException(
+                    MobileLLMException.CODE_SESSION_NOT_FOUND,
+                    "Failed to create native inference session"
+                )
+            }
+            handle
+        } catch (e: Throwable) {
+            synchronized(activeModels) {
+                activeModels.remove(modelHandle)
+            }
+            NativeBridge.nativeUnloadModel(engineHandle, modelHandle)
+            throw e
         }
 
-        ModelSession(engineHandle, sessionHandle)
+        ModelSession(engineHandle, sessionHandle, modelHandle, this@MobileLLMClient)
+    }
+
+    /**
+     * Resets conversation history and clears KV cache for the given session.
+     */
+    fun resetSession(session: ModelSession) {
+        check(!isClosed.get()) { "MobileLLMClient has already been closed" }
+        session.reset()
+    }
+
+    /**
+     * Unloads a specific model by handle from native memory, releasing its weights and memory budget.
+     */
+    fun unloadModel(modelHandle: Long) {
+        synchronized(activeModels) {
+            if (activeModels.remove(modelHandle)) {
+                NativeBridge.nativeUnloadModel(engineHandle, modelHandle)
+            }
+        }
+    }
+
+    /**
+     * Unloads all loaded models from native memory, freeing all reserved weights and memory budget.
+     */
+    fun unloadAllModels() {
+        synchronized(activeModels) {
+            for (model in activeModels) {
+                NativeBridge.nativeUnloadModel(engineHandle, model)
+            }
+            activeModels.clear()
+        }
     }
 
     /**
@@ -195,6 +255,34 @@ class MobileLLMClient private constructor() : Closeable {
      */
     fun detectHardware(): String {
         return NativeBridge.nativeDetectHardware()
+    }
+
+    data class ProcessMemorySnapshot(
+        val currentRssBytes: Long = 0L,
+        val peakRssBytes: Long = 0L,
+        val vmSizeBytes: Long = 0L,
+        val modelAllocatedBytes: Long = 0L,
+        val kvAllocatedBytes: Long = 0L
+    ) {
+        val currentRssMb: Double get() = currentRssBytes / (1024.0 * 1024.0)
+        val peakRssMb: Double get() = peakRssBytes / (1024.0 * 1024.0)
+        val vmSizeMb: Double get() = vmSizeBytes / (1024.0 * 1024.0)
+        val modelAllocatedMb: Double get() = modelAllocatedBytes / (1024.0 * 1024.0)
+        val kvAllocatedMb: Double get() = kvAllocatedBytes / (1024.0 * 1024.0)
+    }
+
+    /**
+     * Queries process memory telemetry (RSS, Peak RSS, VmSize, Model & KV bytes).
+     */
+    fun getProcessMemory(): ProcessMemorySnapshot {
+        val arr = NativeBridge.nativeGetProcessMemory(engineHandle) ?: return ProcessMemorySnapshot()
+        return ProcessMemorySnapshot(
+            currentRssBytes = arr.getOrElse(0) { 0L },
+            peakRssBytes = arr.getOrElse(1) { 0L },
+            vmSizeBytes = arr.getOrElse(2) { 0L },
+            modelAllocatedBytes = arr.getOrElse(3) { 0L },
+            kvAllocatedBytes = arr.getOrElse(4) { 0L }
+        )
     }
 
     override fun close() {

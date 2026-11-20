@@ -80,6 +80,12 @@ if (MOBILELLM_ENABLE_LLAMACPP)
     )
 endif()
 
+# Opt-in tensor-trace instrumentation (off by default; see root CMakeLists.txt)
+if (MOBILELLM_ENABLE_TENSOR_TRACE)
+    target_compile_definitions(mobilellm PRIVATE MOBILELLM_ENABLE_TENSOR_TRACE)
+    target_compile_definitions(mobilellm_static PRIVATE MOBILELLM_ENABLE_TENSOR_TRACE)
+endif()
+
 # Tests
 if (MOBILELLM_BUILD_TESTS)
     find_package(GTest REQUIRED)
@@ -93,13 +99,27 @@ if (MOBILELLM_BUILD_TESTS)
         tests/test_c_api.cpp
         tests/test_scheduler_integration.cpp
         tests/test_milestone2_execution.cpp
+        tests/test_perf_remediation.cpp
+        tests/test_inference_correctness.cpp
+        tests/test_timing_regression.cpp
+        tests/test_backend_switching.cpp
+        tests/test_rust_ffi.cpp
     )
 
     add_executable(mobilellm_tests ${MOBILELLM_TEST_SOURCES})
     target_link_libraries(mobilellm_tests PRIVATE mobilellm_static GTest::gtest GTest::gtest_main Threads::Threads)
+    if (MOBILELLM_ENABLE_RUST)
+        target_link_libraries(mobilellm_tests PRIVATE mobilellm_rust_ffi)
+        target_compile_definitions(mobilellm_tests PRIVATE MOBILELLM_ENABLE_RUST)
+        target_include_directories(mobilellm_tests PRIVATE
+            ${MOBILELLM_ROOT_DIR}/rust/crates/mobilellm-ffi/include
+        )
+    endif()
     target_include_directories(mobilellm_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${MOBILELLM_ROOT_DIR}
+        ${MOBILELLM_ROOT_DIR}/third_party/llama.cpp/include
+        ${MOBILELLM_ROOT_DIR}/third_party/llama.cpp/ggml/include
     )
     target_compile_features(mobilellm_tests PRIVATE cxx_std_20)
 

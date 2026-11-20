@@ -34,6 +34,8 @@ public:
 
     Result<SessionHandle> create_session(ModelHandle model, const SessionConfig& config) noexcept override;
     Status destroy_session(SessionHandle session) noexcept override;
+    Status reset_session(SessionHandle session) noexcept override;
+    Result<std::vector<float>> get_last_logits(SessionHandle session) const noexcept override;
 
     Result<GenerationHandle> generate_async(
         SessionHandle session,
@@ -44,8 +46,15 @@ public:
 
     Status cancel(GenerationHandle handle) noexcept override;
 
+    // Backend Switching
+    Status switch_backend(BackendType target) noexcept override;
+
     EngineMetrics get_metrics() const noexcept override;
     HardwareProfile query_hardware() const noexcept override;
+    ProcessMemoryTelemetry get_process_memory() const noexcept override;
+    Result<ContextTelemetry> get_session_telemetry(SessionHandle session) const noexcept override;
+    Status set_session_threads(SessionHandle session, uint32_t n_threads) noexcept override;
+    GenerationDiagnostics get_generation_diagnostics(SessionHandle session) const noexcept override;
 
     // For test injection & introspection
     void set_backend_override(std::unique_ptr<IBackend> backend);
@@ -57,6 +66,7 @@ private:
         ModelHandle handle{0};
         BackendModelHandle backend_handle{0};
         std::string path;
+        ModelLoadConfig load_config;
         uint64_t reserved_memory_bytes{0};
         bool is_memory_estimated{false};
         ModelMetadata metadata;
@@ -67,6 +77,7 @@ private:
         SessionHandle handle{0};
         ModelHandle model_handle{0};
         BackendSessionHandle backend_handle{0};
+        SessionConfig session_config;
         uint64_t reserved_kv_bytes{0};
         bool is_kv_estimated{false};
     };
@@ -81,12 +92,15 @@ private:
     std::unordered_map<ModelHandle, ModelEntry> models_;
     std::unordered_map<SessionHandle, SessionEntry> sessions_;
     std::unordered_map<GenerationHandle, std::shared_ptr<ActiveRequestInfo>> active_requests_;
+    mutable std::mutex diagnostics_mutex_;
+    std::unordered_map<SessionHandle, GenerationDiagnostics> last_diagnostics_;
 
     std::shared_ptr<IBackend> backend_;
     std::shared_ptr<scheduler::MemoryBudgetManager> memory_mgr_;
     std::unique_ptr<scheduler::ContinuousBatchScheduler> scheduler_;
     std::atomic<bool> initialized_{false};
     std::atomic<bool> shutting_down_{false};
+    std::atomic<bool> is_transitioning_{false};
 
     uint64_t calculate_model_memory_bytes(const ModelLoadConfig& config, bool& out_is_estimated) const noexcept;
     uint64_t calculate_session_kv_bytes(const ModelEntry& model_entry, const SessionConfig& config, bool& out_is_estimated) const noexcept;

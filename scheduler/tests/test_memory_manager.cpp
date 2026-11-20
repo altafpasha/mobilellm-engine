@@ -64,3 +64,10 @@ TEST(MemoryManagerTest, HandleTrimMemoryCallback) {
     EXPECT_EQ(received_level, TrimLevel::RUNNING_CRITICAL);
 }
 
+TEST(MemoryManagerTest, QueryProcessMemory) {
+    ProcessMemoryStats stats = MemoryBudgetManager::query_process_memory();
+    EXPECT_GT(stats.current_rss_bytes, 0);
+    EXPECT_GT(stats.peak_rss_bytes, 0);
+    EXPECT_GE(stats.peak_rss_bytes, stats.current_rss_bytes);
+}
+

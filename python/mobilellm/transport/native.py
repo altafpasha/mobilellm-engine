@@ -209,6 +209,14 @@ class NativeTransport(BaseTransport):
                     del self._default_sessions[m_id]
             return True
 
+    def reset_session(self, session_id: str) -> bool:
+        with self._lock:
+            sess = self._sessions.get(session_id)
+            if sess is None:
+                raise SessionNotFoundError(f"Session '{session_id}' not found")
+            sess.reset()
+            return True
+
     def _get_session(self, model_id: str, session_id: str | None) -> NativeSession:
         if session_id:
             sess = self._sessions.get(session_id)
@@ -317,6 +325,9 @@ class AsyncNativeTransport(AsyncBaseTransport):
 
     async def destroy_session(self, session_id: str) -> bool:
         return await asyncio.to_thread(self._sync.destroy_session, session_id)
+
+    async def reset_session(self, session_id: str) -> bool:
+        return await asyncio.to_thread(self._sync.reset_session, session_id)
 
     async def generate(
         self,

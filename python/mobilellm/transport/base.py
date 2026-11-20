@@ -69,6 +69,10 @@ class BaseTransport(ABC):
     def destroy_session(self, session_id: str) -> bool:
         """Destroys an active inference session."""
 
+    def reset_session(self, session_id: str) -> bool:
+        """Resets conversation history and clears KV cache for this session."""
+        return True
+
     @abstractmethod
     def generate(
         self,
@@ -144,6 +148,10 @@ class AsyncBaseTransport(ABC):
     @abstractmethod
     async def destroy_session(self, session_id: str) -> bool:
         """Destroys an active inference session."""
+
+    async def reset_session(self, session_id: str) -> bool:
+        """Resets conversation history and clears KV cache for this session asynchronously."""
+        return True
 
     @abstractmethod
     async def generate(

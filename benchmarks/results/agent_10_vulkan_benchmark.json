@@ -1,0 +1,636 @@
+{
+  "device": "OnePlus 12R (CPH2691)",
+  "soc": "Qualcomm Snapdragon 8 Gen 2 \/ SM8650",
+  "gpu": "Qualcomm Adreno (TM) 750 (Vulkan 1.3)",
+  "model": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+  "sha256": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
+  "prompt": "<|im_start|>user\nExplain quantum computing in simple terms<|im_end|>\n<|im_start|>assistant\n",
+  "max_tokens": 64,
+  "context_length": 2048,
+  "repetitions": 3,
+  "results": [
+    {
+      "name": "CPU_NEON_T4",
+      "backend": "CPU_NEON",
+      "gpu_layers": 0,
+      "threads": 4,
+      "output_tokens": 64,
+      "generated_text": " to explain quantum computing, let's start with classical computers and then move on to the basics of quantum mechanics.\n\n### Classical Computers:\nClassical computers use bits (0s and 1s) as their fundamental unit of information. Each bit can be either a 0 or a 1, representing two possible states.",
+      "decode_tokens_per_sec": {
+        "mean": 12.96,
+        "median": 12.83,
+        "p90": 13.24,
+        "min": 12.8,
+        "max": 13.24,
+        "stddev": 0.25
+      },
+      "prefill_tokens_per_sec": {
+        "mean": 9556.46,
+        "median": 8691.72,
+        "p90": 15765.28,
+        "min": 4212.37,
+        "max": 15765.28,
+        "stddev": 5824.79
+      },
+      "ttft_ms": {
+        "mean": 106.66,
+        "median": 104.79,
+        "p90": 114.08,
+        "min": 101.11,
+        "max": 114.08,
+        "stddev": 6.69
+      },
+      "total_latency_ms": {
+        "mean": 4944.74,
+        "median": 4991.8,
+        "p90": 5003.45,
+        "min": 4838.97,
+        "max": 5003.45,
+        "stddev": 91.79
+      },
+      "vm_rss_mb": {
+        "mean": 1350.34,
+        "median": 1349.24,
+        "p90": 1352.99,
+        "min": 1348.78,
+        "max": 1352.99,
+        "stddev": 2.31
+      },
+      "vm_hwm_mb": {
+        "mean": 1462.22,
+        "median": 1462.22,
+        "p90": 1462.22,
+        "min": 1462.22,
+        "max": 1462.22,
+        "stddev": 0
+      },
+      "thermal_status_max": 0,
+      "raw_iterations": [
+        {
+          "iteration": 1,
+          "ttft_ms": 104.789,
+          "prefill_tok_per_sec": 15765.278131036786,
+          "decode_tok_per_sec": 12.797588934244787,
+          "total_duration_ms": 5003.447,
+          "vm_rss_mb": 1352.9921875,
+          "avail_ram_mb": 1930,
+          "thermal_status": 0
+        },
+        {
+          "iteration": 2,
+          "ttft_ms": 114.08,
+          "prefill_tok_per_sec": 8691.71696756425,
+          "decode_tok_per_sec": 12.828821229774812,
+          "total_duration_ms": 4991.802,
+          "vm_rss_mb": 1349.2421875,
+          "avail_ram_mb": 1938,
+          "thermal_status": 0
+        },
+        {
+          "iteration": 3,
+          "ttft_ms": 101.108,
+          "prefill_tok_per_sec": 4212.3732567093275,
+          "decode_tok_per_sec": 13.240005089126957,
+          "total_duration_ms": 4838.965,
+          "vm_rss_mb": 1348.77734375,
+          "avail_ram_mb": 1919,
+          "thermal_status": 0
+        }
+      ]
+    },
+    {
+      "name": "VULKAN_L4",
+      "backend": "VULKAN",
+      "gpu_layers": 4,
+      "threads": 4,
+      "output_tokens": 64,
+      "generated_text": "\nQuantum computing is a type of computing that uses the principles of quantum mechanics to perform operations on data. In classical computers, information is processed using bits (0s and 1s), but in quantum computers, information is processed using quantum bits or qubits.\n\nHere are some key points about quantum computing:\n\n1",
+      "decode_tokens_per_sec": {
+        "mean": 1.92,
+        "median": 1.98,
+        "p90": 2.01,
+        "min": 1.76,
+        "max": 2.01,
+        "stddev": 0.13
+      },
+      "prefill_tokens_per_sec": {
+        "mean": 5070.31,
+        "median": 5723.48,
+        "p90": 8155.64,
+        "min": 1331.82,
+        "max": 8155.64,
+        "stddev": 3458.48
+      },
+      "ttft_ms": {
+        "mean": 531.84,
+        "median": 541.06,
+        "p90": 541.48,
+        "min": 512.96,
+        "max": 541.48,
+        "stddev": 16.35
+      },
+      "total_latency_ms": {
+        "mean": 30999.92,
+        "median": 31919.9,
+        "p90": 36314.17,
+        "min": 24765.68,
+        "max": 36314.17,
+        "stddev": 5828.95
+      },
+      "vm_rss_mb": {
+        "mean": 1021.75,
+        "median": 1021.11,
+        "p90": 1023.46,
+        "min": 1020.67,
+        "max": 1023.46,
+        "stddev": 1.5
+      },
+      "vm_hwm_mb": {
+        "mean": 1462.22,
+        "median": 1462.22,
+        "p90": 1462.22,
+        "min": 1462.22,
+        "max": 1462.22,
+        "stddev": 0
+      },
+      "thermal_status_max": 0,
+      "raw_iterations": [
+        {
+          "iteration": 1,
+          "ttft_ms": 541.063,
+          "prefill_tok_per_sec": 1331.8166013958148,
+          "decode_tok_per_sec": 1.7629498028691568,
+          "total_duration_ms": 36314.172,
+          "vm_rss_mb": 1023.46484375,
+          "avail_ram_mb": 2198,
+          "thermal_status": 0
+        },
+        {
+          "iteration": 2,
+          "ttft_ms": 512.963,
+          "prefill_tok_per_sec": 5723.484716960326,
+          "decode_tok_per_sec": 1.9788381433571314,
+          "total_duration_ms": 24765.681,
+          "vm_rss_mb": 1021.109375,
+          "avail_ram_mb": 2323,
+          "thermal_status": 0
+        },
+        {
+          "iteration": 3,
+          "ttft_ms": 541.48,
+          "prefill_tok_per_sec": 8155.635625773766,
+          "decode_tok_per_sec": 2.005229324761897,
+          "total_duration_ms": 31919.902000000002,
+          "vm_rss_mb": 1020.671875,
+          "avail_ram_mb": 2351,
+          "thermal_status": 0
+        }
+      ]
+    },
+    {
+      "name": "VULKAN_L8",
+      "backend": "VULKAN",
+      "gpu_layers": 8,
+      "threads": 4,
+      "output_tokens": 64,
+      "generated_text": " than the classical computers we use today. Here's a simplified explanation:\n\n1. **Classical Computers vs Quantum Computers:**\n   - Classical computers store and process information using bits (0s and 1s).\n   - Quantum computers use qubits, which can represent both 0 and 1 simultaneously due to something",
+      "decode_tokens_per_sec": {
+        "mean": 1.09,
+        "median": 1.09,
+        "p90": 1.09,
+        "min": 1.09,
+        "max": 1.09,
+        "stddev": 0
+      },
+      "prefill_tokens_per_sec": {
+        "mean": 6108.72,
+        "median": 4397.01,
+        "p90": 9543.37,
+        "min": 4385.76,
+        "max": 9543.37,
+        "stddev": 2974.51
+      },
+      "ttft_ms": {
+        "mean": 967.59,
+        "median": 966.73,
+        "p90": 972.09,
+        "min": 963.93,
+        "max": 972.09,
+        "stddev": 4.15
+      },
+      "total_latency_ms": {
+        "mean": 58695.64,
+        "median": 58677.86,
+        "p90": 58739.36,
+        "min": 58669.69,
+        "max": 58739.36,
+        "stddev": 38.08
+      },
+      "vm_rss_mb": {
+        "mean": 1026.4,
+        "median": 1025.67,
+        "p90": 1056.01,
+        "min": 997.53,
+        "max": 1056.01,
+        "stddev": 29.25
+      },
+      "vm_hwm_mb": {
+        "mean": 1462.22,
+        "median": 1462.22,
+        "p90": 1462.22,
+        "min": 1462.22,
+        "max": 1462.22,
+        "stddev": 0
+      },
+      "thermal_status_max": 0,
+      "raw_iterations": [
+        {
+          "iteration": 1,
+          "ttft_ms": 963.933,
+          "prefill_tok_per_sec": 4385.76357751998,
+          "decode_tok_per_sec": 1.0908040700285988,
+          "total_duration_ms": 58677.862,
+          "vm_rss_mb": 1056.01171875,
+          "avail_ram_mb": 2227,
+          "thermal_status": 0
+        },
+        {
+          "iteration": 2,
+          "ttft_ms": 972.093,
+          "prefill_tok_per_sec": 4397.014017094418,
+          "decode_tok_per_sec": 1.0909336493131738,
+          "total_duration_ms": 58669.691999999995,
+          "vm_rss_mb": 1025.66796875,
+          "avail_ram_mb": 2239,
+          "thermal_status": 0
+        },
+        {
+          "iteration": 3,
+          "ttft_ms": 966.731,
+          "prefill_tok_per_sec": 9543.374957293398,
+          "decode_tok_per_sec": 1.0895915271183667,
+          "total_duration_ms": 58739.356999999996,
+          "vm_rss_mb": 997.53125,
+          "avail_ram_mb": 2291,
+          "thermal_status": 0
+        }
+      ]
+    },
+    {
+      "name": "VULKAN_L12",
+      "backend": "VULKAN",
+      "gpu_layers": 12,
+      "threads": 4,
+      "output_tokens": 64,
+      "generated_text": " particles. In classical computers, information is processed using bits (0s and 1s), but in quantum computers, information is processed using qubits (which can be both a 0 and a 1 simultaneously). This allows for much faster processing times and the potential to solve certain problems that are currently impossible with traditional",
+      "decode_tokens_per_sec": {
+        "mean": 0.75,
+        "median": 0.75,
+        "p90": 0.75,
+        "min": 0.75,
+        "max": 0.75,
+        "stddev": 0
+      },
+      "prefill_tokens_per_sec": {
+        "mean": 4050.38,
+        "median": 4400.57,
+        "p90": 5232.84,
+        "min": 2517.72,
+        "max": 5232.84,
+        "stddev": 1391.02
+      },
+      "ttft_ms": {
+        "mean": 1379.35,
+        "median": 1382.39,
+        "p90": 1389.63,
+        "min": 1366.04,
+        "max": 1389.63,
+        "stddev": 12.08
+      },
+      "total_latency_ms": {
+        "mean": 85313.87,
+        "median": 85310.84,
+        "p90": 85350.86,
+        "min": 85279.91,
+        "max": 85350.86,
+        "stddev": 35.57
+      },
+      "vm_rss_mb": {
+        "mean": 847.09,
+        "median": 857.56,
+        "p90": 874.32,
+        "min": 809.39,
+        "max": 874.32,
+        "stddev": 33.71
+      },
+      "vm_hwm_mb": {
+        "mean": 1462.22,
+        "median": 1462.22,
+        "p90": 1462.22,
+        "min": 1462.22,
+        "max": 1462.22,
+        "stddev": 0
+      },
+      "thermal_status_max": 0,
+      "raw_iterations": [
+        {
+          "iteration": 1,
+          "ttft_ms": 1366.043,
+          "prefill_tok_per_sec": 2517.7243598727778,
+          "decode_tok_per_sec": 0.7502566962256473,
+          "total_duration_ms": 85310.838,
+          "vm_rss_mb": 874.32421875,
+          "avail_ram_mb": 2248,
+          "thermal_status": 0
+        },
+        {
+          "iteration": 2,
+          "ttft_ms": 1382.39,
+          "prefill_tok_per_sec": 5232.842295040905,
+          "decode_tok_per_sec": 0.7498792079339939,
+          "total_duration_ms": 85350.85800000001,
+          "vm_rss_mb": 857.55859375,
+          "avail_ram_mb": 2308,
+          "thermal_status": 0
+        },
+        {
+          "iteration": 3,
+          "ttft_ms": 1389.629,
+          "prefill_tok_per_sec": 4400.574304283871,
+          "decode_tok_per_sec": 0.750501252750763,
+          "total_duration_ms": 85279.906,
+          "vm_rss_mb": 809.38671875,
+          "avail_ram_mb": 2238,
+          "thermal_status": 0
+        }
+      ]
+    },
+    {
+      "name": "VULKAN_L16",
+      "backend": "VULKAN",
+      "gpu_layers": 16,
+      "threads": 4,
+      "output_tokens": 64,
+      "generated_text": " reading this article, you will learn about the basics of quantum computing and how it differs from classical computing. The article explains what qubits are, how they work, and how they can be used to perform complex calculations that would be impossible for traditional computers.\nQuantum computing is a type of computing where information is processed using",
+      "decode_tokens_per_sec": {
+        "mean": 0.56,
+        "median": 0.57,
+        "p90": 0.57,
+        "min": 0.54,
+        "max": 0.57,
+        "stddev": 0.01
+      },
+      "prefill_tokens_per_sec": {
+        "mean": 5508.72,
+        "median": 7010.71,
+        "p90": 8246.24,
+        "min": 1269.21,
+        "max": 8246.24,
+        "stddev": 3723.13
+      },
+      "ttft_ms": {
+        "mean": 1798.44,
+        "median": 1793.79,
+        "p90": 1810.05,
+        "min": 1791.48,
+        "max": 1810.05,
+        "stddev": 10.12
+      },
+      "total_latency_ms": {
+        "mean": 114474.08,
+        "median": 113074.53,
+        "p90": 117591.2,
+        "min": 112756.5,
+        "max": 117591.2,
+        "stddev": 2704.19
+      },
+      "vm_rss_mb": {
+        "mean": 664.65,
+        "median": 662.84,
+        "p90": 668.6,
+        "min": 662.52,
+        "max": 668.6,
+        "stddev": 3.42
+      },
+      "vm_hwm_mb": {
+        "mean": 1462.22,
+        "median": 1462.22,
+        "p90": 1462.22,
+        "min": 1462.22,
+        "max": 1462.22,
+        "stddev": 0
+      },
+      "thermal_status_max": 0,
+      "raw_iterations": [
+        {
+          "iteration": 1,
+          "ttft_ms": 1793.787,
+          "prefill_tok_per_sec": 1269.2088412072512,
+          "decode_tok_per_sec": 0.5443230478362067,
+          "total_duration_ms": 117591.19900000001,
+          "vm_rss_mb": 668.59765625,
+          "avail_ram_mb": 2040,
+          "thermal_status": 0
+        },
+        {
+          "iteration": 2,
+          "ttft_ms": 1791.48,
+          "prefill_tok_per_sec": 8246.243835932733,
+          "decode_tok_per_sec": 0.5660138905115112,
+          "total_duration_ms": 113074.529,
+          "vm_rss_mb": 662.8359375,
+          "avail_ram_mb": 2062,
+          "thermal_status": 0
+        },
+        {
+          "iteration": 3,
+          "ttft_ms": 1810.051,
+          "prefill_tok_per_sec": 7010.708623732463,
+          "decode_tok_per_sec": 0.5676111281261416,
+          "total_duration_ms": 112756.49799999999,
+          "vm_rss_mb": 662.515625,
+          "avail_ram_mb": 2114,
+          "thermal_status": 0
+        }
+      ]
+    },
+    {
+      "name": "VULKAN_L20",
+      "backend": "VULKAN",
+      "gpu_layers": 20,
+      "threads": 4,
+      "output_tokens": 64,
+      "generated_text": " faster than classical computers, which are based on binary digits (bits) that can be either 0 or 1. In contrast, a qubit is the basic unit of information in quantum computing and can exist as both 0 and 1 simultaneously until it's measured.\nThis allows quantum computers to perform certain calculations much",
+      "decode_tokens_per_sec": {
+        "mean": 0.46,
+        "median": 0.46,
+        "p90": 0.46,
+        "min": 0.45,
+        "max": 0.46,
+        "stddev": 0
+      },
+      "prefill_tokens_per_sec": {
+        "mean": 5962.13,
+        "median": 3879.68,
+        "p90": 11569.05,
+        "min": 2437.66,
+        "max": 11569.05,
+        "stddev": 4908.97
+      },
+      "ttft_ms": {
+        "mean": 2219.46,
+        "median": 2218.39,
+        "p90": 2232.43,
+        "min": 2207.56,
+        "max": 2232.43,
+        "stddev": 12.47
+      },
+      "total_latency_ms": {
+        "mean": 139780.2,
+        "median": 139493.3,
+        "p90": 140696.13,
+        "min": 139151.16,
+        "max": 140696.13,
+        "stddev": 811.46
+      },
+      "vm_rss_mb": {
+        "mean": 563.54,
+        "median": 557.72,
+        "p90": 575.59,
+        "min": 557.31,
+        "max": 575.59,
+        "stddev": 10.44
+      },
+      "vm_hwm_mb": {
+        "mean": 1462.22,
+        "median": 1462.22,
+        "p90": 1462.22,
+        "min": 1462.22,
+        "max": 1462.22,
+        "stddev": 0
+      },
+      "thermal_status_max": 0,
+      "raw_iterations": [
+        {
+          "iteration": 1,
+          "ttft_ms": 2232.431,
+          "prefill_tok_per_sec": 2437.661677910787,
+          "decode_tok_per_sec": 0.4588266756638754,
+          "total_duration_ms": 139493.298,
+          "vm_rss_mb": 575.59375,
+          "avail_ram_mb": 2172,
+          "thermal_status": 0
+        },
+        {
+          "iteration": 2,
+          "ttft_ms": 2218.385,
+          "prefill_tok_per_sec": 3879.6762384314516,
+          "decode_tok_per_sec": 0.4548958244849284,
+          "total_duration_ms": 140696.12699999998,
+          "vm_rss_mb": 557.3125,
+          "avail_ram_mb": 2082,
+          "thermal_status": 0
+        },
+        {
+          "iteration": 3,
+          "ttft_ms": 2207.564,
+          "prefill_tok_per_sec": 11569.048322372304,
+          "decode_tok_per_sec": 0.4599389508657424,
+          "total_duration_ms": 139151.162,
+          "vm_rss_mb": 557.72265625,
+          "avail_ram_mb": 2038,
+          "thermal_status": 0
+        }
+      ]
+    },
+    {
+      "name": "VULKAN_L24",
+      "backend": "VULKAN",
+      "gpu_layers": 24,
+      "threads": 4,
+      "output_tokens": 64,
+      "generated_text": " faster than classical computers, which are based on binary digits (bits) that can be either 0 or 1. In contrast, a qubit is the basic unit of information in quantum computing and can exist as both 0 and 1 simultaneously until it's measured.\nThis allows quantum computers to perform certain calculations much",
+      "decode_tokens_per_sec": {
+        "mean": 0.38,
+        "median": 0.38,
+        "p90": 0.39,
+        "min": 0.38,
+        "max": 0.39,
+        "stddev": 0
+      },
+      "prefill_tokens_per_sec": {
+        "mean": 4623.22,
+        "median": 5006.52,
+        "p90": 8048.29,
+        "min": 814.86,
+        "max": 8048.29,
+        "stddev": 3631.92
+      },
+      "ttft_ms": {
+        "mean": 2621.23,
+        "median": 2620.18,
+        "p90": 2633.69,
+        "min": 2609.81,
+        "max": 2633.69,
+        "stddev": 11.97
+      },
+      "total_latency_ms": {
+        "mean": 166969.04,
+        "median": 167534.71,
+        "p90": 167578.12,
+        "min": 165794.29,
+        "max": 167578.12,
+        "stddev": 1017.59
+      },
+      "vm_rss_mb": {
+        "mean": 442.01,
+        "median": 438.93,
+        "p90": 449.52,
+        "min": 437.59,
+        "max": 449.52,
+        "stddev": 6.53
+      },
+      "vm_hwm_mb": {
+        "mean": 1462.22,
+        "median": 1462.22,
+        "p90": 1462.22,
+        "min": 1462.22,
+        "max": 1462.22,
+        "stddev": 0
+      },
+      "thermal_status_max": 0,
+      "raw_iterations": [
+        {
+          "iteration": 1,
+          "ttft_ms": 2633.692,
+          "prefill_tok_per_sec": 814.8552678518901,
+          "decode_tok_per_sec": 0.381955190664213,
+          "total_duration_ms": 167578.118,
+          "vm_rss_mb": 449.515625,
+          "avail_ram_mb": 2209,
+          "thermal_status": 0
+        },
+        {
+          "iteration": 2,
+          "ttft_ms": 2620.182,
+          "prefill_tok_per_sec": 5006.518487070165,
+          "decode_tok_per_sec": 0.38201996074589706,
+          "total_duration_ms": 167534.709,
+          "vm_rss_mb": 438.9296875,
+          "avail_ram_mb": 2087,
+          "thermal_status": 0
+        },
+        {
+          "iteration": 3,
+          "ttft_ms": 2609.814,
+          "prefill_tok_per_sec": 8048.289738430583,
+          "decode_tok_per_sec": 0.3860299104901589,
+          "total_duration_ms": 165794.293,
+          "vm_rss_mb": 437.5859375,
+          "avail_ram_mb": 2092,
+          "thermal_status": 0
+        }
+      ]
+    }
+  ]
+}

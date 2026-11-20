@@ -16,7 +16,8 @@ data class ModelConfig(
     val contextLength: Int = 2048,
     val nThreads: Int = 4,
     val useMmap: Boolean = true,
-    val memoryBudgetMb: Float = 0f
+    val memoryBudgetMb: Float = 0f,
+    val nGpuLayers: Int = -1
 ) {
     init {
         require(modelPath.isNotBlank()) { "modelPath must not be blank" }

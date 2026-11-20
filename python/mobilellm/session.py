@@ -73,6 +73,13 @@ class Session:
         """Interrupts ongoing generation in this session."""
         self._transport.cancel(self.session_id)
 
+    def reset(self) -> None:
+        """Resets conversation history and clears KV cache for this session."""
+        if self._is_closed:
+            raise RuntimeError(f"Session '{self.session_id}' is closed")
+        if hasattr(self._transport, "reset_session"):
+            self._transport.reset_session(self.session_id)
+
     def close(self) -> None:
         """Destroys the session on the runtime and releases KV-cache."""
         if not self._is_closed:
@@ -152,6 +159,15 @@ class AsyncSession:
     async def cancel(self) -> None:
         """Interrupts ongoing generation in this session."""
         await self._transport.cancel(self.session_id)
+
+    async def reset(self) -> None:
+        """Resets conversation history and clears KV cache for this session asynchronously."""
+        if self._is_closed:
+            raise RuntimeError(f"Session '{self.session_id}' is closed")
+        if hasattr(self._transport, "reset_session"):
+            res = self._transport.reset_session(self.session_id)
+            if hasattr(res, "__await__"):
+                await res
 
     async def close(self) -> None:
         """Destroys the session on the runtime and releases KV-cache."""

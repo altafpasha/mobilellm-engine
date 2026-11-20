@@ -20,13 +20,16 @@ android {
 
         externalNativeBuild {
             cmake {
+                cFlags("-O3", "-DNDEBUG")
                 cppFlags("-std=c++20", "-fexceptions", "-frtti", "-O3", "-DNDEBUG")
                 arguments(
+                    "-DCMAKE_BUILD_TYPE=Release",
                     "-DANDROID_STL=c++_shared",
                     "-DMOBILELLM_BUILD_TESTS=OFF",
                     "-DMOBILELLM_ENABLE_LLAMACPP=ON",
                     "-DGGML_OPENMP=OFF",
-                    "-DMOBILELLM_ENABLE_VULKAN=OFF",
+                    "-DGGML_VULKAN=ON",
+                    "-DMOBILELLM_ENABLE_VULKAN=ON",
                     "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
                 )
             }

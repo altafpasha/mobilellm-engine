@@ -27,7 +27,9 @@ def main() -> None:
     response = model.generate(prompt, SamplingParams(max_tokens=64, temperature=0.7))
     print(f"Response: {response.text}")
     if response.metrics:
-        print(f"Metrics: {response.metrics.completion_tokens} tokens @ {response.metrics.tokens_per_second:.1f} tok/s")
+        print(
+            f"Metrics: {response.metrics.completion_tokens} tokens @ {response.metrics.tokens_per_second:.1f} tok/s"
+        )
 
     # 2. Streaming Generation
     prompt_stream = "Write 3 bullet points about Python programming language."
@@ -43,4 +45,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

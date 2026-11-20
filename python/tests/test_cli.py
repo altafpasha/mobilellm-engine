@@ -2,7 +2,19 @@
 Unit tests for MobileLLM CLI command parsing and execution.
 """
 
+import pytest
+
 from mobilellm.cli.main import create_parser, main
+
+
+def _has_native_library() -> bool:
+    try:
+        from mobilellm.bindings.native_client import _find_library
+
+        _find_library()
+        return True
+    except FileNotFoundError:
+        return False
 
 
 def test_cli_parser_commands() -> None:
@@ -48,11 +60,13 @@ def test_cli_parser_commands() -> None:
     assert args.allow_remote_connections is True
 
 
+@pytest.mark.skipif(not _has_native_library(), reason="Native library libmobilellm not found")
 def test_cli_status_native() -> None:
     ret = main(["--native", "status"])
     assert ret == 0
 
 
+@pytest.mark.skipif(not _has_native_library(), reason="Native library libmobilellm not found")
 def test_cli_models_native() -> None:
     ret = main(["--native", "models"])
     assert ret == 0
@@ -62,4 +76,3 @@ def test_cli_security_violation_serve() -> None:
     # Attempting to serve on 0.0.0.0 without API key must return error code 2
     ret = main(["serve", "--host", "0.0.0.0", "--allow-remote-connections"])
     assert ret == 2
-

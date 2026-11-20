@@ -1,0 +1,16 @@
+[package]
+name = "mobilellm-ffi"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Stable C-ABI boundary for MobileLLM Rust components"
+
+[lib]
+name = "mobilellm_rust_ffi"
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+mobilellm-core = { path = "../mobilellm-core" }
+mobilellm-gpu = { path = "../mobilellm-gpu" }
+mobilellm-diagnostics = { path = "../mobilellm-diagnostics" }

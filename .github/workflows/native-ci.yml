@@ -1,0 +1,91 @@
+name: Native C++ CI
+
+on:
+  push:
+    branches: [ main, develop, feature/** ]
+  pull_request:
+    branches: [ main, develop ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-build-and-test:
+    name: Native C++ (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-14]
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install Linux Dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build libgtest-dev
+
+      - name: Install macOS Dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew install cmake ninja googletest
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -S . \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DMOBILELLM_BUILD_TESTS=ON \
+            -DMOBILELLM_ENABLE_LLAMACPP=ON
+
+      - name: Build Runtime & Test Suite
+        run: |
+          cmake --build build --parallel
+
+      - name: Execute CTest Suite
+        run: |
+          ctest --test-dir build --output-on-failure
+
+  thread-sanitizer:
+    name: ThreadSanitizer (TSan) Concurrency Audit
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build libgtest-dev clang
+
+      - name: Configure CMake with ThreadSanitizer
+        env:
+          CC: clang
+          CXX: clang++
+        run: |
+          cmake -B build_tsan -S . \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_FLAGS="-fsanitize=thread -g -O1" \
+            -DCMAKE_C_FLAGS="-fsanitize=thread -g -O1" \
+            -DMOBILELLM_BUILD_TESTS=ON \
+            -DMOBILELLM_ENABLE_LLAMACPP=ON
+
+      - name: Build TSan Suite
+        run: |
+          cmake --build build_tsan --parallel
+
+      - name: Run CTest with ThreadSanitizer
+        env:
+          TSAN_OPTIONS: "halt_on_error=1 abort_on_error=1"
+        run: |
+          ctest --test-dir build_tsan --output-on-failure

@@ -1,0 +1,40 @@
+{
+  "test": "testAgent14_MemoryLifecycleTest",
+  "device": "OnePlus 12R (CPH2691)",
+  "soc": "Qualcomm Snapdragon 8 Gen 2 / SM8650",
+  "model": "SmolLM2-135M-Instruct-Q4_K_M.gguf",
+  "cycles": [
+    {
+      "cycle": 1,
+      "pre_load_rss_mb": 253.125,
+      "post_load_rss_mb": 483.1796875,
+      "post_inference_rss_mb": 483.734375,
+      "post_session_close_rss_mb": 351.546875,
+      "post_unload_rss_mb": 351.546875,
+      "post_settle_rss_mb": 351.546875,
+      "peak_hwm_mb": 483.9140625
+    },
+    {
+      "cycle": 2,
+      "pre_load_rss_mb": 351.546875,
+      "post_load_rss_mb": 421.50390625,
+      "post_inference_rss_mb": 422.19140625,
+      "post_session_close_rss_mb": 321.86328125,
+      "post_unload_rss_mb": 321.86328125,
+      "post_settle_rss_mb": 321.86328125,
+      "peak_hwm_mb": 483.9140625
+    },
+    {
+      "cycle": 3,
+      "pre_load_rss_mb": 321.86328125,
+      "post_load_rss_mb": 421.9921875,
+      "post_inference_rss_mb": 422.23828125,
+      "post_session_close_rss_mb": 322.51171875,
+      "post_unload_rss_mb": 322.51171875,
+      "post_settle_rss_mb": 322.51171875,
+      "peak_hwm_mb": 483.9140625
+    }
+  ],
+  "net_rss_growth_cycle2_to_3_mb": 0.648,
+  "verdict": "ZERO_MEMORY_LEAK_CONFIRMED"
+}

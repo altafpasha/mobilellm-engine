@@ -3,6 +3,7 @@ Example 2: Asynchronous Model Loading and Streaming Generation.
 """
 
 import asyncio
+
 from mobilellm import Engine, SamplingParams
 
 
@@ -35,4 +36,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-

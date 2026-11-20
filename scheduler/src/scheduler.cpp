@@ -1,7 +1,23 @@
 #include "mobilellm/scheduler/scheduler.h"
 #include <chrono>
+#include <algorithm>
 
 namespace mobilellm::scheduler {
+
+namespace {
+// Linear-interpolated percentile (0..1) over an unsorted sample set.
+// Duplicated samples are kept: we are describing token latency, not a set of unique values.
+double percentile(std::vector<double> samples, double p) {
+    if (samples.empty()) return 0.0;
+    if (samples.size() == 1) return samples.front();
+    std::sort(samples.begin(), samples.end());
+    const double rank = p * static_cast<double>(samples.size() - 1);
+    const size_t lo = static_cast<size_t>(rank);
+    const size_t hi = std::min(lo + 1, samples.size() - 1);
+    const double frac = rank - static_cast<double>(lo);
+    return samples[lo] * (1.0 - frac) + samples[hi] * frac;
+}
+} // namespace
 
 ContinuousBatchScheduler::ContinuousBatchScheduler(
     std::shared_ptr<IBackend> backend,
@@ -166,6 +182,7 @@ uint32_t ContinuousBatchScheduler::step_batch() noexcept {
             new_req->dequeue_time_us = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(now).count());
             new_req->queue_wait_time_ms = (new_req->dequeue_time_us >= new_req->enqueue_time_us)
                 ? static_cast<double>(new_req->dequeue_time_us - new_req->enqueue_time_us) / 1000.0 : 0.0;
+            new_req->metrics.queue_wait_time_ms = new_req->queue_wait_time_ms;
 
             // Context preparation
             uint32_t prompt_tokens_est = static_cast<uint32_t>(new_req->prompt.size() / 3 + 4);
@@ -182,7 +199,9 @@ uint32_t ContinuousBatchScheduler::step_batch() noexcept {
             new_req->prefill_start_us = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(t_prefill_start.time_since_epoch()).count());
 
             std::vector<int32_t> out_tokens;
-            Status eval_st = backend_->evaluate_prompt(new_req->backend_session_handle, new_req->prompt, out_tokens);
+            PromptEvalInfo eval_info;
+            Status eval_st = backend_->evaluate_prompt(
+                new_req->backend_session_handle, new_req->prompt, out_tokens, &eval_info);
 
             auto t_prefill_end = std::chrono::steady_clock::now();
             new_req->prefill_end_us = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(t_prefill_end.time_since_epoch()).count());
@@ -195,7 +214,22 @@ uint32_t ContinuousBatchScheduler::step_batch() noexcept {
                 continue;
             }
 
+            new_req->prompt_eval = eval_info;
             new_req->metrics.prompt_tokens = static_cast<uint32_t>(out_tokens.size());
+            new_req->metrics.prefill_time_ms = new_req->prefill_time_ms;
+            new_req->metrics.prompt_tokenize_ms = eval_info.tokenize_ms;
+            new_req->metrics.prompt_backend_eval_ms = eval_info.backend_eval_ms;
+            new_req->metrics.prefix_cached_tokens = eval_info.prefix_cached_tokens;
+            new_req->metrics.prefix_cache_hit = eval_info.prefix_cache_full_hit;
+
+            // A fully-cached prompt only re-decodes one token to refresh logits. Dividing the whole
+            // prompt length by that near-zero duration is what produced the bogus 235k-301k tok/s
+            // prefill numbers, so report 0 (= "not measured") instead of a fabricated rate.
+            if (!eval_info.prefix_cache_full_hit &&
+                new_req->prefill_time_ms > 0.0 && new_req->metrics.prompt_tokens > 0) {
+                new_req->metrics.prefill_tokens_per_second =
+                    static_cast<double>(new_req->metrics.prompt_tokens) / (new_req->prefill_time_ms / 1000.0);
+            }
             new_req->decode_start_us = new_req->prefill_end_us;
             active_batch_.push_back(new_req);
         }
@@ -230,7 +264,30 @@ uint32_t ContinuousBatchScheduler::step_batch() noexcept {
             continue;
         }
 
-        auto sample_res = backend_->sample_next_token(req->backend_session_handle, req->sampling);
+        auto t_sample_start = std::chrono::steady_clock::now();
+        if (!req->first_token_emitted) {
+            req->first_token_sample_start_us = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(t_sample_start.time_since_epoch()).count());
+        }
+
+        TokenTiming timing;
+
+        auto sample_res = backend_->sample_next_token(req->backend_session_handle, req->sampling, &timing);
+        auto t_sample_end = std::chrono::steady_clock::now();
+
+        // Agent 10E: accumulate pure backend compute time for this token, isolated from the
+        // streaming token callback below. This yields the true decode execution rate.
+        const double iteration_ms =
+            std::chrono::duration<double, std::milli>(t_sample_end - t_sample_start).count();
+        req->decode_compute_time_ms += iteration_ms;
+
+        // Agent 14: attribute the iteration to "waiting for GPU", "host dispatch", "sampling".
+        if (sample_res.is_ok()) {
+            req->decode_logits_wait_ms += timing.logits_wait_ms;
+            req->decode_dispatch_ms += timing.decode_dispatch_ms;
+            req->decode_sample_ms += timing.sample_ms;
+            req->token_latencies_ms.push_back(iteration_ms);
+        }
+
         if (!sample_res.is_ok()) {
             requests_to_retire.push_back(req->request_id);
             retirement_statuses[req->request_id] = sample_res.status();
@@ -248,19 +305,36 @@ uint32_t ContinuousBatchScheduler::step_batch() noexcept {
         req->generated_tokens++;
         req->metrics.completion_tokens = req->generated_tokens;
 
-        auto now_steady = std::chrono::steady_clock::now();
         if (!req->first_token_emitted) {
-            req->first_token_emitted = true;
-            uint64_t now_us = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(now_steady.time_since_epoch()).count());
-            req->metrics.time_to_first_token_ms = (now_us >= req->enqueue_time_us)
-                ? static_cast<double>(now_us - req->enqueue_time_us) / 1000.0 : 0.0;
+            req->first_token_sample_end_us = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(t_sample_end.time_since_epoch()).count());
+            req->first_token_sampling_time_ms = (req->first_token_sample_end_us >= req->first_token_sample_start_us)
+                ? static_cast<double>(req->first_token_sample_end_us - req->first_token_sample_start_us) / 1000.0 : 0.0;
+            req->pure_inference_ttft_ms = req->prefill_time_ms + req->first_token_sampling_time_ms;
         }
 
         // Invoke token callback WITHOUT holding batch_mutex_
         bool keep_going = true;
         if (req->token_cb) {
             TokenChunk chunk{piece, tok_id, false, 0.0f};
+            const auto t_cb_start = std::chrono::steady_clock::now();
             keep_going = req->token_cb(chunk);
+            req->callback_ms += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - t_cb_start).count();
+        }
+
+        if (!req->first_token_emitted) {
+            req->first_token_emitted = true;
+            auto t_cb_end = std::chrono::steady_clock::now();
+            req->first_token_cb_end_us = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(t_cb_end.time_since_epoch()).count());
+            req->end_to_end_ttft_ms = (req->first_token_cb_end_us >= req->enqueue_time_us)
+                ? static_cast<double>(req->first_token_cb_end_us - req->enqueue_time_us) / 1000.0 : 0.0;
+
+            req->metrics.queue_wait_time_ms = req->queue_wait_time_ms;
+            req->metrics.first_token_sampling_time_ms = req->first_token_sampling_time_ms;
+            req->metrics.pure_inference_ttft_ms = req->pure_inference_ttft_ms;
+            req->metrics.end_to_end_ttft_ms = req->end_to_end_ttft_ms;
+            // R1: Preserve public backward-compatible contract for time_to_first_token_ms (end-to-end TTFT)
+            req->metrics.time_to_first_token_ms = req->end_to_end_ttft_ms;
         }
 
         if (!keep_going) {
@@ -293,9 +367,62 @@ uint32_t ContinuousBatchScheduler::step_batch() noexcept {
                     double total_decode_sec = (req->decode_end_us >= req->decode_start_us)
                         ? static_cast<double>(req->decode_end_us - req->decode_start_us) / 1000000.0 : 0.0;
                     req->decode_time_ms = total_decode_sec * 1000.0;
+                    req->metrics.decode_time_ms = req->decode_time_ms;
                     if (total_decode_sec > 0.0 && req->generated_tokens > 0) {
                         req->metrics.decode_tokens_per_second = static_cast<double>(req->generated_tokens) / total_decode_sec;
                     }
+
+                    // Agent 10E: pure inference-execution decode rate (excludes streaming callbacks).
+                    req->metrics.decode_compute_time_ms = req->decode_compute_time_ms;
+                    if (req->decode_compute_time_ms > 0.0 && req->generated_tokens > 0) {
+                        req->metrics.pure_decode_tokens_per_second =
+                            static_cast<double>(req->generated_tokens) / (req->decode_compute_time_ms / 1000.0);
+                    }
+
+                    // Monotonic total duration from enqueue to decode completion
+                    double total_duration_sec = (now_us >= req->enqueue_time_us)
+                        ? static_cast<double>(now_us - req->enqueue_time_us) / 1000000.0 : 0.0;
+                    req->metrics.total_duration_ms = total_duration_sec * 1000.0;
+
+                    // Query actual process peak RSS
+                    auto mem_stats = MemoryBudgetManager::query_process_memory();
+                    req->metrics.peak_memory_mb = static_cast<double>(mem_stats.peak_rss_bytes) / (1024.0 * 1024.0);
+
+                    // -------------------------------------------------------------------------
+                    // Agent 14: assemble structured diagnostics. Backend identity / offload
+                    // evidence is merged in by EngineImpl (it owns the backend handle); here we
+                    // only fill what the scheduler measured directly.
+                    // -------------------------------------------------------------------------
+                    GenerationDiagnostics& d = req->metrics.diagnostics;
+                    d.prefill_ms = req->prefill_time_ms;
+                    d.decode_ms = req->decode_time_ms;
+                    d.decode_compute_ms = req->decode_compute_time_ms;
+                    d.decode_logits_wait_ms = req->decode_logits_wait_ms;
+                    d.decode_dispatch_ms = req->decode_dispatch_ms;
+                    d.decode_sample_ms = req->decode_sample_ms;
+                    d.callback_ms = req->callback_ms;
+                    d.ttft_ms = req->end_to_end_ttft_ms;
+                    d.prompt_tokens = req->metrics.prompt_tokens;
+                    d.generated_tokens = req->generated_tokens;
+                    d.prefix_cached_tokens = req->prompt_eval.prefix_cached_tokens;
+                    d.prefix_cache_hit = req->prompt_eval.prefix_cache_full_hit;
+                    d.token_latency_p50_ms = percentile(req->token_latencies_ms, 0.50);
+                    d.token_latency_p95_ms = percentile(req->token_latencies_ms, 0.95);
+                    d.token_latency_max_ms = req->token_latencies_ms.empty()
+                        ? 0.0
+                        : *std::max_element(req->token_latencies_ms.begin(), req->token_latencies_ms.end());
+                    d.peak_rss_mb = req->metrics.peak_memory_mb;
+                    d.current_rss_mb = static_cast<double>(mem_stats.current_rss_bytes) / (1024.0 * 1024.0);
+                    if (retirement_statuses[req_id].is_ok()) {
+                        d.benchmark_status = "completed";
+                    } else {
+                        d.benchmark_status = "terminated";
+                        d.error = retirement_statuses[req_id].message;
+                    }
+                    req->metrics.decode_logits_wait_ms = req->decode_logits_wait_ms;
+                    req->metrics.decode_cpu_dispatch_ms = req->decode_dispatch_ms;
+                    req->metrics.decode_sample_ms = req->decode_sample_ms;
+                    req->metrics.decode_callback_ms = req->callback_ms;
 
                     session_mgr_->record_turn_completion(req->session_handle, req->generated_tokens);
 
