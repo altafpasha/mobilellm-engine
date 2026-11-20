@@ -325,6 +325,26 @@ Result<ModelHandle> EngineImpl::load_model(const ModelLoadConfig& config) noexce
                 return sw_st;
             }
         }
+    } else {
+        // When BackendType::AUTO is selected:
+        // Safety guard: If Qualcomm Adreno GPU hits mul_mm.comp fallback, ensure backend is CPU_NEON
+        std::string gpu_desc;
+        {
+            std::lock_guard<std::mutex> lock(engine_mutex_);
+            if (backend_) {
+                gpu_desc = backend_->gpu_device_description();
+            }
+        }
+        if (gpu_desc.find("Adreno") != std::string::npos || gpu_desc.find("Qualcomm") != std::string::npos) {
+            const char* allow_env = getenv("GGML_VULKAN_ALLOW_QUALCOMM_MUL_MAT_VEC");
+            bool allow_vec = (allow_env && (strcmp(allow_env, "1") == 0 || strcmp(allow_env, "true") == 0 || strcmp(allow_env, "TRUE") == 0));
+#if defined(GGML_VULKAN_ALLOW_QUALCOMM_MUL_MAT_VEC)
+            allow_vec = true;
+#endif
+            if (!allow_vec) {
+                switch_backend(BackendType::CPU_NEON);
+            }
+        }
     }
 
     std::lock_guard<std::mutex> lock(engine_mutex_);
@@ -660,6 +680,7 @@ Result<GenerationHandle> EngineImpl::generate_async(
                 d.gpu_vendor = backend_diag.gpu_vendor;
                 d.gpu_driver = backend_diag.gpu_driver;
                 d.vulkan_gemv_path = backend_diag.vulkan_gemv_path;
+                d.fallback_reason = backend_diag.fallback_reason;
                 d.model_layers = backend_diag.model_layers;
                 d.gpu_layers_requested = backend_diag.gpu_layers_requested;
                 d.gpu_layers_actual = backend_diag.gpu_layers_actual;
@@ -964,6 +985,7 @@ GenerationDiagnostics EngineImpl::get_generation_diagnostics(SessionHandle sessi
             d.gpu_vendor = b.gpu_vendor;
             d.gpu_driver = b.gpu_driver;
             d.vulkan_gemv_path = b.vulkan_gemv_path;
+            d.fallback_reason = b.fallback_reason;
             d.model_layers = b.model_layers;
             d.gpu_layers_requested = b.gpu_layers_requested;
             d.gpu_layers_actual = b.gpu_layers_actual;

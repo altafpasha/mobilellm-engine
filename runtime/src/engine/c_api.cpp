@@ -54,6 +54,7 @@ std::string diagnostics_to_json(const mobilellm::GenerationDiagnostics& d) {
       << ",\"gpu_vendor\":\"" << json_escape(d.gpu_vendor) << '"'
       << ",\"gpu_driver\":\"" << json_escape(d.gpu_driver) << '"'
       << ",\"vulkan_gemv_path\":\"" << json_escape(d.vulkan_gemv_path) << '"'
+      << ",\"fallback_reason\":\"" << json_escape(d.fallback_reason) << '"'
       << ",\"model_layers\":" << d.model_layers
       << ",\"gpu_layers_requested\":" << d.gpu_layers_requested
       << ",\"gpu_layers_actual\":" << d.gpu_layers_actual

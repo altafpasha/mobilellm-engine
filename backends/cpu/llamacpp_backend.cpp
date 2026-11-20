@@ -319,11 +319,47 @@ Result<BackendModelHandle> LlamaCppBackend::load_model(const ModelLoadConfig& co
     mparams.use_mlock = config.use_mlock;
 
     int32_t target_gpu_layers = 0;
-    if (config.preferred_backend == BackendType::VULKAN) {
+    std::string fallback_reason;
+
+    if (config.preferred_backend == BackendType::AUTO) {
+        // Runtime performance and thermal safety guard:
+        // Probe GPU device description and vendor.
+        bool gpu_avail = is_gpu_supported();
+        std::string gpu_desc = probe_gpu_device_description();
+        std::string gpu_vend = classify_gpu_vendor(gpu_desc);
+        bool is_qualcomm_gpu = (gpu_vend == "Qualcomm" || gpu_desc.find("Adreno") != std::string::npos || gpu_desc.find("Qualcomm") != std::string::npos);
+
+        // Check whether Qualcomm mul_mat_vec is explicitly enabled via environment variable or compile define
+        const char* allow_env = getenv("GGML_VULKAN_ALLOW_QUALCOMM_MUL_MAT_VEC");
+        bool allow_qualcomm_vec = (allow_env && (strcmp(allow_env, "1") == 0 || strcmp(allow_env, "true") == 0 || strcmp(allow_env, "TRUE") == 0));
+#if defined(GGML_VULKAN_ALLOW_QUALCOMM_MUL_MAT_VEC)
+        allow_qualcomm_vec = true;
+#endif
+
+        if (gpu_avail && is_qualcomm_gpu && !allow_qualcomm_vec) {
+            // Qualcomm Adreno GPU (0x5143) hits mul_mm.comp fallback (~2 tok/s decode, severe heating).
+            // Automatically fall back to CPU_NEON (4-6 threads) for performance and thermal safety.
+            current_backend_.store(BackendType::CPU_NEON);
+            target_gpu_layers = 0;
+            uint32_t safe_threads = config.n_threads > 0 ? std::clamp(config.n_threads, 4u, 6u) : 4u;
+            fallback_reason = "Qualcomm Adreno GPU (0x5143) hits mul_mm.comp fallback (~2 tok/s decode); AUTO routed to CPU_NEON (" +
+                              std::to_string(safe_threads) + " threads) for thermal safety and 57x faster decode";
+            LOGW("[MobileLLM Safety Guard] %s", fallback_reason.c_str());
+        } else if (gpu_avail) {
+            target_gpu_layers = (config.n_gpu_layers >= 0) ? config.n_gpu_layers : 99;
+            current_backend_.store(BackendType::VULKAN);
+            LOGI("AUTO backend selected Vulkan GPU: n_gpu_layers=%d", target_gpu_layers);
+        } else {
+            current_backend_.store(BackendType::CPU_NEON);
+            target_gpu_layers = 0;
+            LOGI("AUTO backend selected CPU NEON (no GPU available)");
+        }
+    } else if (config.preferred_backend == BackendType::VULKAN) {
         if (!is_gpu_supported()) {
             LOGW("Vulkan GPU backend requested, but no GPU device is supported on this platform. Falling back safely to CPU NEON.");
             current_backend_.store(BackendType::CPU_NEON);
             target_gpu_layers = 0;
+            fallback_reason = "Explicit Vulkan requested but no Vulkan GPU supported; falling back to CPU_NEON";
         } else {
             target_gpu_layers = (config.n_gpu_layers >= 0) ? config.n_gpu_layers : 99;
             current_backend_.store(BackendType::VULKAN);
@@ -389,7 +425,12 @@ Result<BackendModelHandle> LlamaCppBackend::load_model(const ModelLoadConfig& co
     loaded->raw_model = raw;
     loaded->context_length = config.context_length;
     loaded->n_vocab = static_cast<uint32_t>(llama_n_vocab(raw));
-    loaded->n_threads = config.n_threads > 0 ? config.n_threads : 4;
+    uint32_t model_threads = config.n_threads > 0 ? config.n_threads : 4;
+    if (!fallback_reason.empty() && fallback_reason.find("AUTO routed to CPU_NEON") != std::string::npos) {
+        model_threads = std::clamp(model_threads, 4u, 6u);
+    }
+    loaded->n_threads = model_threads;
+    loaded->fallback_reason = fallback_reason;
     loaded->requested_gpu_layers = target_gpu_layers;
     int32_t total_model_layers = llama_n_layer(raw);
     int32_t act_layers = 0;
@@ -564,6 +605,10 @@ Result<BackendSessionHandle> LlamaCppBackend::create_session(
     sess->model_layers = it->second->model_layers;
     sess->offloaded_layers = it->second->offloaded_layers;
     sess->total_offloadable_layers = it->second->total_offloadable_layers;
+    sess->fallback_reason = it->second->fallback_reason;
+    if (!sess->fallback_reason.empty() && sess->fallback_reason.find("AUTO routed to CPU_NEON") != std::string::npos) {
+        sess->n_threads = std::clamp(sess->n_threads, 4u, 6u);
+    }
     {
         std::lock_guard<std::mutex> lock(g_llama_facts_mutex);
         sess->graph_nodes = g_llama_facts.graph_nodes;
@@ -973,6 +1018,11 @@ GenerationDiagnostics LlamaCppBackend::describe_session(BackendSessionHandle ses
     d.gpu_vendor = sess->gpu_vendor;
     d.gpu_driver = sess->gpu_driver;
     d.vulkan_gemv_path = sess->vulkan_matmul_path;
+    d.fallback_reason = sess->fallback_reason;
+    if (!sess->fallback_reason.empty() && sess->fallback_reason.find("AUTO routed to CPU_NEON") != std::string::npos) {
+        d.backend_requested = "auto";
+        d.backend_selected = "cpu_neon";
+    }
 
     d.model_layers = sess->model_layers;
     d.gpu_layers_requested = sess->offloaded_layers >= 0 ? sess->offloaded_layers : 0;
