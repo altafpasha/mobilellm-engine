@@ -1,0 +1,11 @@
+[package]
+name = "mobilellm-diagnostics"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Diagnostic orchestration and hardware validation runner for MobileLLM"
+
+[dependencies]
+mobilellm-core = { path = "../mobilellm-core" }
+mobilellm-gpu = { path = "../mobilellm-gpu" }

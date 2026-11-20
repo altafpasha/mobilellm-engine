@@ -3,6 +3,7 @@
 #include "backends/common/backend_registry.h"
 #include "backends/mock/mock_backend.h"
 #include <cstring>
+#include <cstdlib>
 #include <future>
 #include <chrono>
 #include <string>
@@ -20,10 +21,29 @@ TEST(CApiTest, GetVersion) {
 }
 
 TEST(CApiTest, DetectHardware) {
-    char buf[256];
+    char buf[512];
     mllm_status_t st = mllm_detect_hardware(buf, sizeof(buf));
     EXPECT_EQ(st.code, 0);
+
+    // The profile is produced by real OS detection, not a hardcoded literal.
+    EXPECT_TRUE(strstr(buf, "\"arch\":\"") != nullptr);
+    EXPECT_TRUE(strstr(buf, "\"device\":\"") != nullptr);
+    EXPECT_TRUE(strstr(buf, "\"soc\":\"") != nullptr);
+    EXPECT_TRUE(strstr(buf, "\"neon\":") != nullptr);
+    EXPECT_TRUE(strstr(buf, "\"vulkan\":") != nullptr);
+    EXPECT_TRUE(strstr(buf, "\"npu\":") != nullptr);
+#if defined(__aarch64__) || defined(_M_ARM64)
     EXPECT_TRUE(strstr(buf, "\"arch\":\"ARM64\"") != nullptr);
+#endif
+
+    // Physical RAM is queried from the OS and must be a positive, sane value.
+    const char* ram_key = strstr(buf, "\"total_ram_mb\":");
+    ASSERT_NE(ram_key, nullptr);
+    EXPECT_GT(std::atoi(ram_key + strlen("\"total_ram_mb\":")), 0);
+
+    // Bounds checks.
+    EXPECT_NE(mllm_detect_hardware(nullptr, 32).code, 0);
+    EXPECT_NE(mllm_detect_hardware(buf, 0).code, 0);
 }
 
 TEST(CApiTest, FullLifecycle) {
@@ -102,6 +122,73 @@ TEST(CApiTest, FullLifecycle) {
     EXPECT_EQ(ctx.tokens_seen, 5);
 
     // Destroy session, unload model, destroy engine
+    EXPECT_EQ(mllm_session_destroy(engine, session).code, 0);
+    EXPECT_EQ(mllm_model_unload(engine, model).code, 0);
+    EXPECT_EQ(mllm_engine_destroy(engine).code, 0);
+}
+
+TEST(CApiTest, GenerationDiagnosticsJson) {
+    mobilellm::BackendRegistry::instance().register_backend(mobilellm::BackendType::CPU_NEON, []() {
+        return std::make_unique<mobilellm::MockBackend>();
+    });
+
+    mllm_engine_t engine = 0;
+    ASSERT_EQ(mllm_engine_create(&engine).code, 0);
+
+    mllm_model_config_t m_cfg;
+    memset(&m_cfg, 0, sizeof(m_cfg));
+    m_cfg.model_path = "/tmp/mock_model_diag.gguf";
+    m_cfg.backend = 0;
+    m_cfg.context_length = 1024;
+
+    mllm_model_t model = 0;
+    ASSERT_EQ(mllm_model_load(engine, &m_cfg, &model).code, 0);
+
+    mllm_session_config_t s_cfg;
+    memset(&s_cfg, 0, sizeof(s_cfg));
+    s_cfg.max_context_tokens = 1024;
+
+    mllm_session_t session = 0;
+    ASSERT_EQ(mllm_session_create(engine, model, &s_cfg, &session).code, 0);
+
+    // Before any generation the profile is reported as "idle".
+    char idle_buf[2048];
+    ASSERT_EQ(mllm_get_generation_diagnostics(engine, session, idle_buf, sizeof(idle_buf)).code, 0);
+    EXPECT_TRUE(strstr(idle_buf, "\"benchmark_status\":\"idle\"") != nullptr);
+    EXPECT_TRUE(strstr(idle_buf, "\"backend_selected\":\"") != nullptr);
+
+    // Run a generation to completion.
+    mllm_sampling_params_t sparams;
+    memset(&sparams, 0, sizeof(sparams));
+    sparams.temperature = 0.0f;
+    sparams.max_tokens = 6;
+
+    struct Ctx { std::promise<void> done; } ctx;
+    auto token_fn = [](const mllm_token_chunk_t*, void*) -> bool { return true; };
+    auto complete_fn = [](mllm_status_t, const mllm_metrics_t*, void* udata) {
+        static_cast<Ctx*>(udata)->done.set_value();
+    };
+
+    mllm_gen_handle_t gen = 0;
+    ASSERT_EQ(mllm_generate(engine, session, "diagnostics", &sparams, token_fn, complete_fn, &ctx, &gen).code, 0);
+    ASSERT_EQ(ctx.done.get_future().wait_for(std::chrono::seconds(3)), std::future_status::ready);
+
+    // The completed generation is serialized with real, non-default values.
+    char buf[2048];
+    ASSERT_EQ(mllm_get_generation_diagnostics(engine, session, buf, sizeof(buf)).code, 0);
+    EXPECT_TRUE(strstr(buf, "\"benchmark_status\":\"completed\"") != nullptr) << buf;
+    EXPECT_TRUE(strstr(buf, "\"generated_tokens\":6") != nullptr) << buf;
+    EXPECT_TRUE(strstr(buf, "\"token_latency_p95_ms\":") != nullptr) << buf;
+
+    // Bounds + handle validation.
+    EXPECT_NE(mllm_get_generation_diagnostics(engine, session, nullptr, 32).code, 0);
+    EXPECT_NE(mllm_get_generation_diagnostics(engine, session, buf, 0).code, 0);
+    EXPECT_NE(mllm_get_generation_diagnostics(99999, session, buf, sizeof(buf)).code, 0);
+    // A tiny buffer must truncate safely without overflow.
+    char tiny[16];
+    EXPECT_EQ(mllm_get_generation_diagnostics(engine, session, tiny, sizeof(tiny)).code, 0);
+    EXPECT_EQ(tiny[sizeof(tiny) - 1], '\0');
+
     EXPECT_EQ(mllm_session_destroy(engine, session).code, 0);
     EXPECT_EQ(mllm_model_unload(engine, model).code, 0);
     EXPECT_EQ(mllm_engine_destroy(engine).code, 0);

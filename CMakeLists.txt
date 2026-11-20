@@ -15,6 +15,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Build Options
 option(MOBILELLM_BUILD_TESTS "Build MobileLLM unit and integration tests" ON)
 option(MOBILELLM_BUILD_TOOLS "Build developer command-line utilities" ON)
+option(MOBILELLM_ENABLE_RUST "Enable optional Rust components" OFF)
 
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/CMakeLists.txt")
     option(MOBILELLM_ENABLE_LLAMACPP "Enable llama.cpp / GGML baseline compute backend" ON)
@@ -22,7 +23,22 @@ else()
     option(MOBILELLM_ENABLE_LLAMACPP "Enable llama.cpp / GGML baseline compute backend" OFF)
 endif()
 
+# Opt-in diagnostic instrumentation. When enabled, a sentinel file can install a llama.cpp
+# eval callback that forces ggml_backend_sched to execute the compute graph one node at a time.
+# This is a severe throughput hazard and MUST remain OFF for shipping builds.
+option(MOBILELLM_ENABLE_TENSOR_TRACE "Compile opt-in differential tensor-trace instrumentation (debug only)" OFF)
+
 # Compiler Flags & Diagnostics
+if (APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+    # On Apple Silicon (M1-M4), armv8.2a+dotprod prevents compiler from generating unsupported i8mm instructions (smmla)
+    if (NOT CMAKE_C_FLAGS MATCHES "-march=")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv8.2a+dotprod" CACHE STRING "Flags for C compiler" FORCE)
+    endif()
+    if (NOT CMAKE_CXX_FLAGS MATCHES "-march=")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv8.2a+dotprod" CACHE STRING "Flags for CXX compiler" FORCE)
+    endif()
+endif()
+
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     add_compile_options(
         -Wall
@@ -56,6 +72,14 @@ add_subdirectory(scheduler)
 
 # Core Runtime Subdirectory
 add_subdirectory(runtime)
+
+# Optional Rust Subsystem
+if (MOBILELLM_ENABLE_RUST)
+    message(STATUS "MobileLLM: Optional Rust components ENABLED")
+    add_subdirectory(rust)
+else()
+    message(STATUS "MobileLLM: Rust components disabled (pure C++20 build)")
+endif()
 
 # Developer Tools
 if (MOBILELLM_BUILD_TOOLS)

@@ -54,6 +54,7 @@ class _CMllmModelConfig(Structure):
         ("use_mmap", c_bool),
         ("use_mlock", c_bool),
         ("memory_budget_mb", c_float),
+        ("n_gpu_layers", c_int32),
     ]
 
 
@@ -290,6 +291,53 @@ class NativeSession:
             )
             self._active_gen = None
 
+    def reset(self) -> None:
+        """Resets conversation history and clears KV cache for this session."""
+        if self._is_closed:
+            raise MobileLLMError("Session is closed")
+        if not hasattr(self._lib, "mllm_session_reset"):
+            return
+        status = self._lib.mllm_session_reset(
+            c_uint64(self._engine_handle),
+            c_uint64(self._session_handle),
+        )
+        if status.code != 0:
+            msg = status.message.decode("utf-8", errors="replace") if status.message else "mllm_session_reset failed"
+            raise map_error_code(status.code, msg) or MobileLLMError(msg, status.code)
+
+    def get_last_logits(self) -> list[float]:
+        """Retrieves raw unnormalized logits of the most recent token step."""
+        if self._is_closed:
+            raise MobileLLMError("Session is closed")
+        if not hasattr(self._lib, "mllm_get_last_logits"):
+            return []
+        vocab_size = c_size_t(0)
+        status = self._lib.mllm_get_last_logits(
+            c_uint64(self._engine_handle),
+            c_uint64(self._session_handle),
+            None,
+            c_size_t(0),
+            ctypes.byref(vocab_size),
+        )
+        if status.code != 0:
+            msg = status.message.decode("utf-8", errors="replace") if status.message else "mllm_get_last_logits failed"
+            raise map_error_code(status.code, msg) or MobileLLMError(msg, status.code)
+        if vocab_size.value == 0:
+            return []
+        buf = (c_float * vocab_size.value)()
+        out_len = c_size_t(0)
+        status = self._lib.mllm_get_last_logits(
+            c_uint64(self._engine_handle),
+            c_uint64(self._session_handle),
+            buf,
+            vocab_size,
+            ctypes.byref(out_len),
+        )
+        if status.code != 0:
+            msg = status.message.decode("utf-8", errors="replace") if status.message else "mllm_get_last_logits failed"
+            raise map_error_code(status.code, msg) or MobileLLMError(msg, status.code)
+        return list(buf[:out_len.value])
+
     def close(self) -> None:
         """Destroys the native session context."""
         if not self._is_closed:
@@ -348,6 +396,20 @@ class NativeClient:
 
         self._lib.mllm_session_destroy.argtypes = [c_uint64, c_uint64]
         self._lib.mllm_session_destroy.restype = _CMllmStatus
+
+        if hasattr(self._lib, "mllm_session_reset"):
+            self._lib.mllm_session_reset.argtypes = [c_uint64, c_uint64]
+            self._lib.mllm_session_reset.restype = _CMllmStatus
+
+        if hasattr(self._lib, "mllm_get_last_logits"):
+            self._lib.mllm_get_last_logits.argtypes = [
+                c_uint64,
+                c_uint64,
+                POINTER(c_float),
+                c_size_t,
+                POINTER(c_size_t),
+            ]
+            self._lib.mllm_get_last_logits.restype = _CMllmStatus
 
         # Generation
         self._lib.mllm_generate.argtypes = [
@@ -430,6 +492,7 @@ class NativeClient:
             use_mmap=config.use_mmap,
             use_mlock=False,
             memory_budget_mb=float(config.memory_budget_mb),
+            n_gpu_layers=int(getattr(config, "n_gpu_layers", 0)),
         )
 
         m_handle = c_uint64(0)
@@ -498,6 +561,20 @@ class NativeClient:
                 c_uint64(model_handle),
             )
             self._loaded_models.remove(model_handle)
+
+    def reset_session(self, session_handle: int) -> None:
+        """Resets conversation history and clears KV cache for this session."""
+        if self._engine_handle is None:
+            raise MobileLLMError("Engine is destroyed")
+        if not hasattr(self._lib, "mllm_session_reset"):
+            return
+        status = self._lib.mllm_session_reset(
+            c_uint64(self._engine_handle),
+            c_uint64(session_handle),
+        )
+        if status.code != 0:
+            msg = status.message.decode("utf-8", errors="replace") if status.message else "mllm_session_reset failed"
+            raise map_error_code(status.code, msg) or MobileLLMError(msg, status.code)
 
     def close(self) -> None:
         """Frees all loaded models and shuts down native engine."""

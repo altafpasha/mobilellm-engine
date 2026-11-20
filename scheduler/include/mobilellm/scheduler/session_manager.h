@@ -58,6 +58,7 @@ public:
     ) noexcept;
 
     Status destroy_session(SessionHandle session) noexcept;
+    Status reset_session(SessionHandle session) noexcept;
 
     Result<SessionMetadata> get_session_info(SessionHandle session) const noexcept;
 

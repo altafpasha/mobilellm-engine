@@ -1,11 +1,17 @@
 #include "backends/mock/mock_backend.h"
 #include <sstream>
+#include <thread>
+#include <chrono>
 
 namespace mobilellm {
 
 constexpr int32_t MOCK_EOS_TOKEN = 9999;
 
-MockBackend::MockBackend() = default;
+std::atomic<uint32_t> MockBackend::default_token_latency_us_{0};
+
+MockBackend::MockBackend() {
+    token_latency_us_ = default_token_latency_us_.load();
+}
 
 Status MockBackend::initialize(const BackendConfig& /*config*/) noexcept {
     return Status::ok();
@@ -83,8 +89,12 @@ Status MockBackend::destroy_session(BackendSessionHandle session) noexcept {
 Status MockBackend::evaluate_prompt(
     BackendSessionHandle session,
     const std::string& prompt,
-    std::vector<int32_t>& out_tokens
+    std::vector<int32_t>& out_tokens,
+    PromptEvalInfo* out_info
 ) noexcept {
+    if (out_info) {
+        *out_info = PromptEvalInfo{};
+    }
     std::lock_guard<std::mutex> lock(mutex_);
     if (simulate_eval_failure_) {
         return Status::error(StatusCode::BACKEND_EXECUTION_ERROR, "Simulated prompt evaluation error");
@@ -106,6 +116,13 @@ Status MockBackend::evaluate_prompt(
         out_tokens.push_back(static_cast<int32_t>(static_cast<unsigned char>(c)));
     }
 
+    if (out_info) {
+        out_info->prompt_tokens = static_cast<uint32_t>(out_tokens.size());
+        out_info->evaluated_tokens = static_cast<uint32_t>(out_tokens.size());
+        out_info->prefix_cached_tokens = 0;
+        out_info->eval_calls = 1;
+    }
+
     it->second.prompt_tokens = out_tokens;
     it->second.generated_tokens.clear();
     it->second.step = 0;
@@ -114,8 +131,12 @@ Status MockBackend::evaluate_prompt(
 
 Result<int32_t> MockBackend::sample_next_token(
     BackendSessionHandle session,
-    const SamplingParams& params
+    const SamplingParams& params,
+    TokenTiming* out_timing
 ) noexcept {
+    if (out_timing) {
+        *out_timing = TokenTiming{};
+    }
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = sessions_.find(session);
     if (it == sessions_.end()) {
@@ -150,6 +171,16 @@ Result<int32_t> MockBackend::sample_next_token(
 
     s.generated_tokens.push_back(chosen);
     s.step++;
+
+    // Model a deterministic per-token compute cost (test-only). Busy-wait rather than sleep so the
+    // duration is not quantized by the OS scheduler's sleep granularity.
+    if (token_latency_us_ > 0) {
+        const auto deadline = std::chrono::steady_clock::now() +
+                              std::chrono::microseconds(token_latency_us_);
+        while (std::chrono::steady_clock::now() < deadline) {
+            // spin
+        }
+    }
     return chosen;
 }
 
@@ -167,6 +198,23 @@ bool MockBackend::is_eos_token(BackendSessionHandle /*session*/, int32_t token_i
     return token_id == MOCK_EOS_TOKEN;
 }
 
+GenerationDiagnostics MockBackend::describe_session(BackendSessionHandle session) const noexcept {
+    GenerationDiagnostics d;
+    d.backend_requested = "mock";
+    d.backend_selected = "mock";
+    d.cpu_threads = 1;
+    d.cpu_cores = 1;
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = sessions_.find(session);
+    if (it == sessions_.end()) {
+        d.error = "session_not_found";
+        return d;
+    }
+    d.gpu_offload_verified = false;
+    d.gpu_layers_actual = 0;
+    return d;
+}
+
 Status MockBackend::set_threads(BackendSessionHandle session, uint32_t /*n_threads*/) noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = sessions_.find(session);
@@ -174,6 +222,30 @@ Status MockBackend::set_threads(BackendSessionHandle session, uint32_t /*n_threa
         return Status::error(StatusCode::SESSION_NOT_FOUND, "Session handle not found");
     }
     return Status::ok();
+}
+
+Status MockBackend::reset_session(BackendSessionHandle session) noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = sessions_.find(session);
+    if (it == sessions_.end()) {
+        return Status::error(StatusCode::SESSION_NOT_FOUND, "Session handle not found");
+    }
+    it->second.prompt_tokens.clear();
+    it->second.generated_tokens.clear();
+    it->second.step = 0;
+    if (it->second.sampler) {
+        it->second.sampler = std::make_unique<Sampler>(42 + static_cast<uint64_t>(session));
+    }
+    return Status::ok();
+}
+
+Result<std::vector<float>> MockBackend::get_last_logits(BackendSessionHandle session) const noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = sessions_.find(session);
+    if (it == sessions_.end()) {
+        return Status::error(StatusCode::SESSION_NOT_FOUND, "Session handle not found");
+    }
+    return it->second.reusable_logits;
 }
 
 } // namespace mobilellm

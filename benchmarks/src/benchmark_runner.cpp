@@ -47,6 +47,8 @@ struct IterationMetrics {
     double first_token_sampling_time_ms{0.0};
     double decode_time_ms{0.0};
     double decode_tokens_per_sec{0.0};
+    double decode_compute_time_ms{0.0};
+    double pure_decode_tokens_per_sec{0.0};
     double ttft_pure_ms{0.0};
     double ttft_e2e_ms{0.0};
     double total_duration_ms{0.0};
@@ -343,6 +345,8 @@ int main(int argc, char* argv[]) {
         iter.first_token_sampling_time_ms = runtime_metrics.first_token_sampling_time_ms;
         iter.decode_time_ms = runtime_metrics.decode_time_ms;
         iter.decode_tokens_per_sec = runtime_metrics.decode_tokens_per_second;
+        iter.decode_compute_time_ms = runtime_metrics.decode_compute_time_ms;
+        iter.pure_decode_tokens_per_sec = runtime_metrics.pure_decode_tokens_per_second;
         iter.ttft_pure_ms = runtime_metrics.pure_inference_ttft_ms > 0.0 ? runtime_metrics.pure_inference_ttft_ms : runtime_metrics.time_to_first_token_ms;
         iter.ttft_e2e_ms = runtime_metrics.end_to_end_ttft_ms > 0.0 ? runtime_metrics.end_to_end_ttft_ms : std::chrono::duration<double, std::milli>(token_arrival_times.empty() ? t_complete - t_enqueue : token_arrival_times.front() - t_enqueue).count();
         iter.total_duration_ms = std::chrono::duration<double, std::milli>(t_complete - t_enqueue).count();
@@ -381,6 +385,7 @@ int main(int argc, char* argv[]) {
                   << "TTFT: " << std::fixed << std::setprecision(1) << iter.ttft_e2e_ms << " ms | "
                   << "Prefill: " << iter.prefill_tokens_per_sec << " tok/s | "
                   << "Decode: " << iter.decode_tokens_per_sec << " tok/s | "
+                  << "Pure Decode: " << iter.pure_decode_tokens_per_sec << " tok/s | "
                   << "P50 Latency: " << iter.p50_latency_ms << " ms | "
                   << "P95 Latency: " << iter.p95_latency_ms << " ms\n";
 
@@ -388,12 +393,13 @@ int main(int argc, char* argv[]) {
     }
 
     // 5. Aggregate Results Across Measured Iterations
-    std::vector<double> ttfts, prefill_tps, decode_tps, p50s, p95s, peak_mems;
+    std::vector<double> ttfts, prefill_tps, decode_tps, pure_decode_tps, p50s, p95s, peak_mems;
     for (const auto& m : all_metrics) {
         if (!m.is_warmup) {
             ttfts.push_back(m.ttft_e2e_ms);
             prefill_tps.push_back(m.prefill_tokens_per_sec);
             decode_tps.push_back(m.decode_tokens_per_sec);
+            pure_decode_tps.push_back(m.pure_decode_tokens_per_sec);
             p50s.push_back(m.p50_latency_ms);
             p95s.push_back(m.p95_latency_ms);
             peak_mems.push_back(m.peak_rss_mb);
@@ -403,6 +409,7 @@ int main(int argc, char* argv[]) {
     auto stat_ttft = compute_stats(ttfts);
     auto stat_prefill = compute_stats(prefill_tps);
     auto stat_decode = compute_stats(decode_tps);
+    auto stat_pure_decode = compute_stats(pure_decode_tps);
     auto stat_p50 = compute_stats(p50s);
     auto stat_p95 = compute_stats(p95s);
     auto stat_mem = compute_stats(peak_mems);
@@ -425,6 +432,7 @@ int main(int argc, char* argv[]) {
     print_row("Time to First Token", stat_ttft, "ms");
     print_row("Prefill Throughput", stat_prefill, "tok/s");
     print_row("Decode Throughput", stat_decode, "tok/s");
+    print_row("Pure Decode Throughput", stat_pure_decode, "tok/s");
     print_row("Median (P50) Latency", stat_p50, "ms");
     print_row("P95 Tail Latency", stat_p95, "ms");
     print_row("Peak Process RSS", stat_mem, "MB");
@@ -461,6 +469,7 @@ int main(int argc, char* argv[]) {
                << "    \"ttft_p50_ms\": " << stat_ttft.min << ",\n"
                << "    \"prefill_tps_mean\": " << stat_prefill.mean << ",\n"
                << "    \"decode_tps_mean\": " << stat_decode.mean << ",\n"
+               << "    \"pure_decode_tps_mean\": " << stat_pure_decode.mean << ",\n"
                << "    \"p50_latency_ms\": " << stat_p50.mean << ",\n"
                << "    \"p95_latency_ms\": " << stat_p95.mean << ",\n"
                << "    \"peak_rss_mb\": " << stat_mem.mean << "\n"
@@ -480,6 +489,8 @@ int main(int argc, char* argv[]) {
                    << "      \"first_token_sampling_time_ms\": " << it.first_token_sampling_time_ms << ",\n"
                    << "      \"decode_time_ms\": " << it.decode_time_ms << ",\n"
                    << "      \"decode_tps\": " << it.decode_tokens_per_sec << ",\n"
+                   << "      \"decode_compute_time_ms\": " << it.decode_compute_time_ms << ",\n"
+                   << "      \"pure_decode_tps\": " << it.pure_decode_tokens_per_sec << ",\n"
                    << "      \"ttft_pure_ms\": " << it.ttft_pure_ms << ",\n"
                    << "      \"ttft_e2e_ms\": " << it.ttft_e2e_ms << ",\n"
                    << "      \"p50_latency_ms\": " << it.p50_latency_ms << ",\n"

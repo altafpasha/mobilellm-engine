@@ -44,6 +44,15 @@ struct QueuedRequest {
     double pure_inference_ttft_ms{0.0};
     double end_to_end_ttft_ms{0.0};
     double decode_time_ms{0.0};
+    double decode_compute_time_ms{0.0}; // Agent 10E: sum of per-token backend sample_next_token() durations
+
+    // Agent 14: decomposition of the decode window plus per-token latency distribution.
+    PromptEvalInfo prompt_eval;
+    double decode_logits_wait_ms{0.0};
+    double decode_dispatch_ms{0.0};
+    double decode_sample_ms{0.0};
+    double callback_ms{0.0};
+    std::vector<double> token_latencies_ms;
 
     std::atomic<bool> is_cancelled{false};
     uint32_t generated_tokens{0};

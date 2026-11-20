@@ -15,7 +15,9 @@ def main() -> None:
 
         # Turn 1
         print("User: My favorite fruit is mango. Remember this.")
-        r1 = session.generate("My favorite fruit is mango. Remember this.", SamplingParams(max_tokens=32))
+        r1 = session.generate(
+            "My favorite fruit is mango. Remember this.", SamplingParams(max_tokens=32)
+        )
         print(f"Assistant: {r1.text.strip()}\n")
 
         # Turn 2
@@ -29,4 +31,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -57,3 +57,13 @@ flowchart TD
 - Host macOS builds automatically enable the Metal framework for local desktop testing.
 - Android builds compile with ARM NEON CPU compute by default, with Vulkan GPU compute capability-probed dynamically at runtime.
 
+### 3.6 Session Lifecycle & KV Cache Reuse Semantics
+- **Prefix-Aware Reuse:** Sessions preserve KV cache cells matching the common prefix of successive prompts (`common_prefix > 0`). Only new suffix tokens are decoded, preventing context loss in multi-turn dialogues while avoiding full re-prefill.
+- **Independent Prompt Isolation:** When `common_prefix == 0` or upon calling `mllm_session_reset()`, the engine invokes `llama_kv_cache_clear()` and resets past token counters to 0, preventing stale KV contamination across independent queries.
+- **Divergent Suffix Trimming:** If a prompt edits or branches conversation history (`common_prefix < history.size()`), divergent positions are pruned with `llama_kv_cache_seq_rm()`.
+
+### 3.7 Tokenizer & Special Token Requirements
+- **ChatML Parsing:** Chat models utilizing ChatML syntax (e.g., Qwen 2.5) require `parse_special = true` in `llama_tokenize()` to prevent control tags (`<|im_start|>`, `<|im_end|>`, `<|endoftext|>`) from fragmenting into character-level tokens.
+- **BOS Policy:** Model-specific BOS configuration (`llama_add_bos_token()`) is strictly respected. Prompts are never unconditionally prefixed with BOS tokens if the architecture suppresses them.
+- **EOG Detection:** `is_eos_token()` inspects both end-of-text and end-of-turn token IDs (`151645` for `<|im_end|>`, `151643` for `<|endoftext|>`).
+

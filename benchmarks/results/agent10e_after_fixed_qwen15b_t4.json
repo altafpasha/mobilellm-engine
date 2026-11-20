@@ -1,0 +1,57 @@
+{
+  "benchmark_version": "0.1.0-dev",
+  "os": "macOS (Apple Darwin)",
+  "arch": "arm64",
+  "model": {
+    "path": "models/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+    "architecture": "qwen2",
+    "file_size_mb": 1065.56,
+    "context_length": 2048
+  },
+  "configuration": {
+    "threads": 4,
+    "max_tokens": 24,
+    "temperature": 0,
+    "warmup_runs": 0,
+    "measured_runs": 1
+  },
+  "model_loading": {
+    "duration_ms": 316.989,
+    "rss_delta_mb": 1117.75,
+    "session_init_ms": 9.24854
+  },
+  "summary": {
+    "ttft_mean_ms": 200.579,
+    "ttft_p50_ms": 200.579,
+    "prefill_tps_mean": 72.2256,
+    "decode_tps_mean": 47.4493,
+    "pure_decode_tps_mean": 47.4665,
+    "p50_latency_ms": 18.8779,
+    "p95_latency_ms": 25.0124,
+    "peak_rss_mb": 1187.19
+  },
+  "iterations": [
+    {
+      "iteration": 0,
+      "is_warmup": false,
+      "prompt_tokens": 13,
+      "completion_tokens": 24,
+      "queue_wait_time_ms": 1.732,
+      "prefill_time_ms": 179.992,
+      "prefill_tps": 72.2256,
+      "first_token_sampling_time_ms": 18.836,
+      "decode_time_ms": 505.803,
+      "decode_tps": 47.4493,
+      "decode_compute_time_ms": 505.619,
+      "pure_decode_tps": 47.4665,
+      "ttft_pure_ms": 198.828,
+      "ttft_e2e_ms": 200.579,
+      "p50_latency_ms": 18.8779,
+      "p90_latency_ms": 20.9862,
+      "p95_latency_ms": 25.0124,
+      "p99_latency_ms": 57.4073,
+      "jitter_stddev_ms": 9.78979,
+      "peak_rss_mb": 1187.19
+    }
+  ]
+}

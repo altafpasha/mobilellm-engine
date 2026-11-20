@@ -6,6 +6,8 @@
 #include <mutex>
 #include <unordered_map>
 #include <sstream>
+#include <algorithm>
+#include <cstdio>
 
 namespace {
 
@@ -16,6 +18,88 @@ uint64_t g_next_engine_id = 1;
 // Thread-local error message storage ensuring valid pointer lifetime
 // across C-ABI boundaries without heap leaking or cross-thread data races.
 thread_local std::string tls_last_error_message;
+
+// Escapes a string for embedding in a JSON double-quoted value.
+std::string json_escape(const std::string& in) {
+    std::string out;
+    out.reserve(in.size() + 8);
+    for (unsigned char c : in) {
+        switch (c) {
+            case '"': out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default:
+                if (c < 0x20) {
+                    char buf[8];
+                    std::snprintf(buf, sizeof(buf), "\\u%04x", c);
+                    out += buf;
+                } else {
+                    out += static_cast<char>(c);
+                }
+        }
+    }
+    return out;
+}
+
+// Serializes the full structured per-generation diagnostics record. Kept in one place so the C API
+// and JNI bridge share an identical schema.
+std::string diagnostics_to_json(const mobilellm::GenerationDiagnostics& d) {
+    std::ostringstream o;
+    o << '{'
+      << "\"backend_requested\":\"" << json_escape(d.backend_requested) << '"'
+      << ",\"backend_selected\":\"" << json_escape(d.backend_selected) << '"'
+      << ",\"gpu_device\":\"" << json_escape(d.gpu_device) << '"'
+      << ",\"gpu_vendor\":\"" << json_escape(d.gpu_vendor) << '"'
+      << ",\"gpu_driver\":\"" << json_escape(d.gpu_driver) << '"'
+      << ",\"vulkan_gemv_path\":\"" << json_escape(d.vulkan_gemv_path) << '"'
+      << ",\"model_layers\":" << d.model_layers
+      << ",\"gpu_layers_requested\":" << d.gpu_layers_requested
+      << ",\"gpu_layers_actual\":" << d.gpu_layers_actual
+      << ",\"gpu_offload_verified\":" << (d.gpu_offload_verified ? "true" : "false")
+      << ",\"graph_nodes\":" << d.graph_nodes
+      << ",\"graph_splits_pp\":" << d.graph_splits_pp
+      << ",\"graph_splits_tg\":" << d.graph_splits_tg
+      << ",\"model_load_ms\":" << d.model_load_ms
+      << ",\"session_create_ms\":" << d.session_create_ms
+      << ",\"prefill_ms\":" << d.prefill_ms
+      << ",\"decode_ms\":" << d.decode_ms
+      << ",\"decode_compute_ms\":" << d.decode_compute_ms
+      << ",\"decode_logits_wait_ms\":" << d.decode_logits_wait_ms
+      << ",\"decode_dispatch_ms\":" << d.decode_dispatch_ms
+      << ",\"decode_sample_ms\":" << d.decode_sample_ms
+      << ",\"callback_ms\":" << d.callback_ms
+      << ",\"ttft_ms\":" << d.ttft_ms
+      << ",\"prompt_tokens\":" << d.prompt_tokens
+      << ",\"generated_tokens\":" << d.generated_tokens
+      << ",\"prefix_cached_tokens\":" << d.prefix_cached_tokens
+      << ",\"prefix_cache_hit\":" << (d.prefix_cache_hit ? "true" : "false")
+      << ",\"context_capacity\":" << d.context_capacity
+      << ",\"kv_used_tokens\":" << d.kv_used_tokens
+      << ",\"kv_cache_bytes\":" << d.kv_cache_bytes
+      << ",\"token_latency_p50_ms\":" << d.token_latency_p50_ms
+      << ",\"token_latency_p95_ms\":" << d.token_latency_p95_ms
+      << ",\"token_latency_max_ms\":" << d.token_latency_max_ms
+      << ",\"cpu_threads\":" << d.cpu_threads
+      << ",\"cpu_cores\":" << d.cpu_cores
+      << ",\"current_rss_mb\":" << d.current_rss_mb
+      << ",\"peak_rss_mb\":" << d.peak_rss_mb
+      << ",\"thermal_status\":" << d.thermal_status
+      << ",\"benchmark_status\":\"" << json_escape(d.benchmark_status) << '"'
+      << ",\"error\":\"" << json_escape(d.error) << '"'
+      << '}';
+    return o.str();
+}
+
+// Copies a JSON document into a caller-provided buffer with safe truncation + null termination.
+void copy_json_out(const std::string& json, char* buffer, size_t max_len) {
+    const size_t to_copy = std::min(max_len > 0 ? max_len - 1 : 0, json.size());
+    if (to_copy > 0) {
+        std::memcpy(buffer, json.data(), to_copy);
+    }
+    buffer[to_copy] = '\0';
+}
 
 const char* default_status_message(int32_t code) {
     switch (static_cast<mobilellm::StatusCode>(code)) {
@@ -105,6 +189,15 @@ mllm_status_t mllm_engine_destroy(mllm_engine_t engine_id) {
     return c_error(0, "");
 }
 
+mllm_status_t mllm_engine_switch_backend(mllm_engine_t engine_id, int32_t target_backend) {
+    auto* engine = get_engine(engine_id);
+    if (!engine) {
+        return c_error(static_cast<int32_t>(mobilellm::StatusCode::INVALID_ARGUMENT), "Invalid engine handle");
+    }
+    auto target = static_cast<mobilellm::BackendType>(target_backend);
+    return to_c_status(engine->switch_backend(target));
+}
+
 mllm_status_t mllm_model_load(mllm_engine_t engine_id, const mllm_model_config_t* config, mllm_model_t* out_model) {
     if (!config || !out_model) {
         return c_error(static_cast<int32_t>(mobilellm::StatusCode::INVALID_ARGUMENT), "Config or out_model pointer is null");
@@ -125,6 +218,7 @@ mllm_status_t mllm_model_load(mllm_engine_t engine_id, const mllm_model_config_t
     cpp_cfg.use_mmap = config->use_mmap;
     cpp_cfg.use_mlock = config->use_mlock;
     cpp_cfg.memory_budget_mb = config->memory_budget_mb;
+    cpp_cfg.n_gpu_layers = config->n_gpu_layers;
 
     auto res = engine->load_model(cpp_cfg);
     if (!res.is_ok()) {
@@ -209,6 +303,51 @@ mllm_status_t mllm_session_destroy(mllm_engine_t engine_id, mllm_session_t sessi
         return c_error(static_cast<int32_t>(mobilellm::StatusCode::INVALID_ARGUMENT), "Invalid engine handle");
     }
     return to_c_status(engine->destroy_session(session));
+}
+
+mllm_status_t mllm_session_reset(mllm_engine_t engine_id, mllm_session_t session) {
+    auto* engine = get_engine(engine_id);
+    if (!engine) {
+        return c_error(static_cast<int32_t>(mobilellm::StatusCode::INVALID_ARGUMENT), "Invalid engine handle");
+    }
+    return to_c_status(engine->reset_session(session));
+}
+
+mllm_status_t mllm_get_last_logits(
+    mllm_engine_t engine_id,
+    mllm_session_t session,
+    float* out_buffer,
+    size_t max_len,
+    size_t* out_len
+) {
+    if (!out_buffer && !out_len) {
+        return c_error(static_cast<int32_t>(mobilellm::StatusCode::INVALID_ARGUMENT), "both out_buffer and out_len are null");
+    }
+
+    auto* engine = get_engine(engine_id);
+    if (!engine) {
+        return c_error(static_cast<int32_t>(mobilellm::StatusCode::INVALID_ARGUMENT), "Invalid engine handle");
+    }
+
+    auto res = engine->get_last_logits(session);
+    if (!res.is_ok()) {
+        return to_c_status(res.status());
+    }
+
+    const auto& logits = res.value();
+    if (out_len) {
+        *out_len = logits.size();
+    }
+    if (!out_buffer) {
+        return c_error(0, "");
+    }
+
+    size_t to_copy = std::min(max_len, logits.size());
+    std::memcpy(out_buffer, logits.data(), to_copy * sizeof(float));
+    if (out_len) {
+        *out_len = to_copy;
+    }
+    return c_error(0, "");
 }
 
 mllm_status_t mllm_generate(
@@ -300,9 +439,59 @@ mllm_status_t mllm_detect_hardware(char* json_buffer, size_t max_len) {
     if (!json_buffer || max_len == 0) {
         return c_error(static_cast<int32_t>(mobilellm::StatusCode::INVALID_ARGUMENT), "Buffer is null or zero length");
     }
-    const char* info = "{\"device\":\"Host\",\"arch\":\"ARM64\",\"neon\":true,\"vulkan\":false,\"npu\":false}";
-    strncpy(json_buffer, info, max_len - 1);
-    json_buffer[max_len - 1] = '\0';
+
+    const mobilellm::HardwareProfile hp = mobilellm::detect_hardware();
+
+    auto arch = []() -> const char* {
+#if defined(__aarch64__) || defined(_M_ARM64)
+        return "ARM64";
+#elif defined(__arm__) || defined(_M_ARM)
+        return "ARMv7";
+#elif defined(__x86_64__) || defined(_M_X64)
+        return "X86_64";
+#elif defined(__i386__) || defined(_M_IX86)
+        return "X86";
+#else
+        return "UNKNOWN";
+#endif
+    };
+
+    const uint64_t total_ram_mb = hp.total_ram_bytes / (1024ULL * 1024ULL);
+    const uint64_t available_ram_mb = hp.available_ram_bytes / (1024ULL * 1024ULL);
+
+    std::ostringstream json;
+    json << "{\"arch\":\"" << arch() << "\""
+         << ",\"device\":\"" << json_escape(hp.device_name) << "\""
+         << ",\"soc\":\"" << json_escape(hp.soc_platform) << "\""
+         << ",\"neon\":" << (hp.neon_supported ? "true" : "false")
+         << ",\"vulkan\":" << (hp.vulkan_supported ? "true" : "false")
+         << ",\"vulkan_device\":\"" << json_escape(hp.vulkan_device_name) << "\""
+         << ",\"npu\":" << (hp.npu_supported ? "true" : "false")
+         << ",\"cpu_cores\":" << hp.cpu_core_count
+         << ",\"total_ram_mb\":" << total_ram_mb
+         << ",\"available_ram_mb\":" << available_ram_mb
+         << "}";
+
+    copy_json_out(json.str(), json_buffer, max_len);
+    return c_error(0, "");
+}
+
+mllm_status_t mllm_get_generation_diagnostics(
+    mllm_engine_t engine_id,
+    mllm_session_t session,
+    char* json_buffer,
+    size_t max_len
+) {
+    if (!json_buffer || max_len == 0) {
+        return c_error(static_cast<int32_t>(mobilellm::StatusCode::INVALID_ARGUMENT), "Buffer is null or zero length");
+    }
+    auto* engine = get_engine(engine_id);
+    if (!engine) {
+        return c_error(static_cast<int32_t>(mobilellm::StatusCode::INVALID_ARGUMENT), "Invalid engine handle");
+    }
+
+    mobilellm::GenerationDiagnostics d = engine->get_generation_diagnostics(session);
+    copy_json_out(diagnostics_to_json(d), json_buffer, max_len);
     return c_error(0, "");
 }
 

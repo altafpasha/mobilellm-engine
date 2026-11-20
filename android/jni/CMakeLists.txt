@@ -31,11 +31,26 @@ add_library(mobilellm_jni SHARED
     mobilellm_jni.cpp
 )
 
+option(MOBILELLM_ENABLE_RUST "Enable optional Rust components" OFF)
+if (MOBILELLM_ENABLE_RUST)
+    message(STATUS "MobileLLM Android: Enabling optional Rust components")
+    add_subdirectory(${MOBILELLM_ROOT_DIR}/rust ${CMAKE_CURRENT_BINARY_DIR}/rust_build)
+endif()
+
 target_include_directories(mobilellm_jni PRIVATE
     ${MOBILELLM_ROOT_DIR}/runtime/include
     ${MOBILELLM_ROOT_DIR}/scheduler/include
     ${MOBILELLM_ROOT_DIR}
 )
+
+if (MOBILELLM_ENABLE_RUST)
+    target_include_directories(mobilellm_jni PRIVATE
+        ${MOBILELLM_ROOT_DIR}/rust/crates/mobilellm-ffi/include
+    )
+    target_compile_definitions(mobilellm_jni PRIVATE
+        MOBILELLM_ENABLE_RUST
+    )
+endif()
 
 target_compile_definitions(mobilellm_jni PRIVATE
     MOBILELLM_BUILD_JNI
@@ -51,3 +66,7 @@ target_link_libraries(mobilellm_jni PRIVATE
     vulkan
     log
 )
+
+if (MOBILELLM_ENABLE_RUST)
+    target_link_libraries(mobilellm_jni PRIVATE mobilellm_rust_ffi)
+endif()

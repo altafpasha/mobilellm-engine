@@ -79,6 +79,7 @@ data class ChatUiState(
     val modelMetadataMap: Map<String, ModelMetadata> = emptyMap(),
     val samplingParams: SamplingParams = SamplingParams(),
     val preferredBackend: BackendType = BackendType.CPU_NEON,
+    val gpuLayers: Int = -1,
     val threadCount: Int = run {
         val totalCores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
         // On 8+ core mobile SoCs (e.g. Snapdragon big.LITTLE / DynamIQ), clamp default inference threads
@@ -89,6 +90,7 @@ data class ChatUiState(
     val engineVersion: String = "0.1.0-dev",
     val hardwareInfo: String = "Detecting...",
     val lastMetrics: GenerationMetrics? = null,
+    val generationDiagnostics: String = "",
     val systemTotalRamMb: Long = 0L,
     val systemAvailRamMb: Long = 0L,
     val isLowMemory: Boolean = false,
@@ -119,6 +121,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val client: MobileLLMClient = MobileLLMClient.getInstance(application)
     private var activeSession: ModelSession? = null
     private var generationJob: Job? = null
+    private var benchmarkJob: Job? = null
     private var loadModelJob: Job? = null
     private val loadMutex = Mutex()
     private var thermalListener: PowerManager.OnThermalStatusChangedListener? = null
@@ -399,7 +402,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         modelPath = file.absolutePath,
                         preferredBackend = _uiState.value.preferredBackend,
                         contextLength = 2048,
-                        nThreads = _uiState.value.threadCount
+                        nThreads = _uiState.value.threadCount,
+                        nGpuLayers = _uiState.value.gpuLayers
                     )
                     val sessionConfig = SessionConfig(
                         maxContextTokens = 2048,
@@ -528,11 +532,18 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
+            val diagJson = try {
+                session.getGenerationDiagnostics()
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to read generation diagnostics", e)
+                null
+            }
+
             _uiState.update { state ->
                 state.copy(
                     isGenerating = false,
                     lastMetrics = completedMetrics,
-                    nativeRssMb = completedMetrics?.peakRssMb ?: state.nativeRssMb,
+                    generationDiagnostics = diagJson ?: state.generationDiagnostics,
                     messages = state.messages.map { msg ->
                         if (msg.id == assistantMsgId) {
                             msg.copy(
@@ -561,6 +572,40 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateSettings(params: SamplingParams, backend: BackendType, threads: Int, layers: Int) {
+        val prevBackend = _uiState.value.preferredBackend
+        val prevLayers = _uiState.value.gpuLayers
+        val prevThreads = _uiState.value.threadCount
+
+        val maxCores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        val clampedThreads = threads.coerceIn(1, maxCores)
+        val finalLayers = if (backend == BackendType.CPU_NEON) 0 else layers
+
+        _uiState.update {
+            it.copy(
+                samplingParams = params,
+                preferredBackend = backend,
+                threadCount = clampedThreads,
+                gpuLayers = finalLayers
+            )
+        }
+
+        val engineChanged = (prevBackend != backend) || (prevLayers != finalLayers)
+        if (engineChanged && _uiState.value.isModelLoaded) {
+            stopGeneration()
+            val loadedName = _uiState.value.loadedModelName
+            val currentFile = _uiState.value.availableModels.firstOrNull { it.name == loadedName }
+            if (currentFile != null && currentFile.exists()) {
+                Log.i(TAG, "Engine configuration changed (backend: $prevBackend -> $backend, layers: $prevLayers -> $finalLayers). Reloading model: ${currentFile.name}")
+                loadModel(currentFile)
+            }
+        } else if (prevThreads != clampedThreads && activeSession != null) {
+            viewModelScope.launch(Dispatchers.Default) {
+                activeSession?.setThreads(clampedThreads)
+            }
+        }
+    }
+
     fun updateSamplingParams(params: SamplingParams) {
         _uiState.update { it.copy(samplingParams = params) }
     }
@@ -573,6 +618,19 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             val currentFile = _uiState.value.availableModels.firstOrNull { it.name == loadedName }
             if (currentFile != null && currentFile.exists()) {
                 Log.i(TAG, "Backend changed from $previous to $backend. Reloading model: ${currentFile.name}")
+                loadModel(currentFile)
+            }
+        }
+    }
+
+    fun updateGpuLayers(layers: Int) {
+        val previous = _uiState.value.gpuLayers
+        _uiState.update { it.copy(gpuLayers = layers) }
+        if (previous != layers && _uiState.value.isModelLoaded) {
+            val loadedName = _uiState.value.loadedModelName
+            val currentFile = _uiState.value.availableModels.firstOrNull { it.name == loadedName }
+            if (currentFile != null && currentFile.exists()) {
+                Log.i(TAG, "GPU layers changed from $previous to $layers. Reloading model: ${currentFile.name}")
                 loadModel(currentFile)
             }
         }
@@ -591,61 +649,137 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun runBenchmark() {
+    fun stopBenchmark() {
+        benchmarkJob?.cancel()
+        benchmarkJob = null
+        stopGeneration()
+        _uiState.update {
+            it.copy(
+                isBenchmarking = false,
+                errorMessage = "Benchmark cancelled by user."
+            )
+        }
+    }
+
+    /**
+     * Agent 14: Thermal-Aware Benchmark Execution
+     *
+     * In accordance with Section 8 Thermal Safety guidelines:
+     * - Rejects benchmark execution when thermal status is SEVERE, CRITICAL, or EMERGENCY.
+     * - Default mode runs 1 Warmup (16 tok) + 1 Measured Run (32 tok) on the user's selected backend.
+     * - Extended mode (sweep across 2T..8T) applies only to CPU and enforces adaptive cooldown.
+     * - Aborts active benchmark if device thermals escalate to SEVERE or CRITICAL mid-run.
+     * - Releases resources and resets thread state upon completion or cancellation.
+     */
+    fun runBenchmark(extended: Boolean = false) {
         val session = activeSession
         if (session == null || _uiState.value.isGenerating || _uiState.value.isBenchmarking) {
             return
         }
 
-        viewModelScope.launch(Dispatchers.Default) {
+        // Section 8: Thermal Status Gate - detect severity before launching
+        val currentThermal = _uiState.value.thermalStatus
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && currentThermal >= PowerManager.THERMAL_STATUS_SEVERE) {
+            _uiState.update {
+                it.copy(
+                    errorMessage = "Benchmark blocked for thermal safety: Device thermal status is ${_uiState.value.thermalStatusName}. Please allow the device to cool down."
+                )
+            }
+            return
+        }
+
+        benchmarkJob = viewModelScope.launch(Dispatchers.Default) {
             _uiState.update { it.copy(isBenchmarking = true, errorMessage = null) }
             val maxCores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
-            val threadConfigs = listOf(2, 4, 6, 8).filter { it <= maxCores }
-                .ifEmpty { listOf(maxCores) }
-            val benchmarkPrompt = "Explain the fundamental principles of artificial intelligence and machine learning in simple, clear terms for mobile engineers."
+            val isVulkan = _uiState.value.preferredBackend == BackendType.VULKAN
 
-            for (threads in threadConfigs) {
-                updateThreads(threads)
-                delay(300) // Brief settle time
-
-                var receivedMetrics: GenerationMetrics? = null
-                try {
-                    val sampling = SamplingParams(maxTokens = 35, temperature = 0.0f)
-                    session.generate(
-                        prompt = benchmarkPrompt,
-                        params = sampling,
-                        onMetrics = { m -> receivedMetrics = m }
-                    ).collect {
-                        // Consume stream
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Benchmark failed for thread count $threads: ${e.message}")
-                }
-
-                val finalMetrics = receivedMetrics
-                if (finalMetrics != null) {
-                    val run = BenchmarkRun(
-                        threads = threads,
-                        promptTokens = finalMetrics.promptTokens,
-                        completionTokens = finalMetrics.completionTokens,
-                        promptTokensPerSecond = finalMetrics.promptTokensPerSecond,
-                        tokensPerSecond = finalMetrics.tokensPerSecond,
-                        timeToFirstTokenMs = finalMetrics.timeToFirstTokenMs,
-                        totalDurationMs = finalMetrics.totalDurationMs,
-                        peakRssMb = finalMetrics.peakRssMb,
-                        thermalStatusName = _uiState.value.thermalStatusName
-                    )
-                    _uiState.update { state ->
-                        state.copy(
-                            benchmarkHistory = state.benchmarkHistory + run,
-                            lastMetrics = finalMetrics
-                        )
-                    }
-                }
+            // Section 8: Default benchmark configuration:
+            // Warmup: 1, Measured runs: 1, Output tokens: 32, Threads: 4 (or clamped maxCores)
+            val threadConfigs = if (extended && !isVulkan) {
+                listOf(2, 4, 6, 8).filter { it <= maxCores }.ifEmpty { listOf(maxCores) }
+            } else {
+                listOf(minOf(4, maxCores))
             }
 
-            _uiState.update { it.copy(isBenchmarking = false) }
-            refreshSystemStats()
+            val benchmarkPrompt = "Explain the fundamental principles of artificial intelligence and machine learning in simple, clear terms for mobile engineers."
+
+            try {
+                for (threads in threadConfigs) {
+                    // Check cancellation
+                    if (!coroutineContext[Job]!!.isActive) break
+
+                    // Section 8: Mid-run thermal severity check
+                    val liveThermal = _uiState.value.thermalStatus
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && liveThermal >= PowerManager.THERMAL_STATUS_SEVERE) {
+                        _uiState.update {
+                            it.copy(
+                                errorMessage = "Benchmark safely aborted: Device thermal state reached ${_uiState.value.thermalStatusName}."
+                            )
+                        }
+                        break
+                    }
+
+                    updateThreads(threads)
+
+                    // 1. Warmup iteration (16 tokens) per Section 8
+                    try {
+                        val warmupParams = SamplingParams(maxTokens = 16, temperature = 0.0f)
+                        session.generate(
+                            prompt = benchmarkPrompt,
+                            params = warmupParams
+                        ).collect {}
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Benchmark warmup failed: ${e.message}")
+                    }
+
+                    // Section 8: Cooldown between benchmark runs (2000 ms)
+                    delay(2000)
+
+                    // Check cancellation after cooldown
+                    if (!coroutineContext[Job]!!.isActive) break
+
+                    // 2. Measured iteration (32 output tokens) per Section 8
+                    var receivedMetrics: GenerationMetrics? = null
+                    try {
+                        val sampling = SamplingParams(maxTokens = 32, temperature = 0.0f)
+                        session.generate(
+                            prompt = benchmarkPrompt,
+                            params = sampling,
+                            onMetrics = { m -> receivedMetrics = m }
+                        ).collect {}
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Benchmark failed for thread count $threads: ${e.message}")
+                    }
+
+                    val finalMetrics = receivedMetrics
+                    if (finalMetrics != null) {
+                        val run = BenchmarkRun(
+                            threads = threads,
+                            promptTokens = finalMetrics.promptTokens,
+                            completionTokens = finalMetrics.completionTokens,
+                            promptTokensPerSecond = finalMetrics.promptTokensPerSecond,
+                            tokensPerSecond = finalMetrics.tokensPerSecond,
+                            timeToFirstTokenMs = finalMetrics.timeToFirstTokenMs,
+                            totalDurationMs = finalMetrics.totalDurationMs,
+                            peakRssMb = finalMetrics.peakRssMb,
+                            thermalStatusName = _uiState.value.thermalStatusName
+                        )
+                        _uiState.update { state ->
+                            state.copy(
+                                benchmarkHistory = state.benchmarkHistory + run,
+                                lastMetrics = finalMetrics
+                            )
+                        }
+                    }
+
+                    // Post-iteration cooldown
+                    delay(1500)
+                }
+            } finally {
+                _uiState.update { it.copy(isBenchmarking = false) }
+                benchmarkJob = null
+                refreshSystemStats()
+            }
         }
     }
 

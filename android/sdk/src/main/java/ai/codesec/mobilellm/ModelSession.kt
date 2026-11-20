@@ -148,9 +148,31 @@ class ModelSession internal constructor(
         return NativeBridge.nativeSetSessionThreads(engineHandle, sessionHandle, threads)
     }
 
+    /**
+     * Returns the structured diagnostics (backend identity, offload evidence, stage timings,
+     * KV/context, per-token latency percentiles) of this session's most recent generation, as JSON.
+     * Returns null if the session is closed.
+     */
+    fun getGenerationDiagnostics(): String? {
+        if (isClosed.get()) return null
+        return NativeBridge.nativeGetGenerationDiagnostics(engineHandle, sessionHandle)
+    }
+
+    /**
+     * Resets conversation history and clears KV cache for this session.
+     */
+    fun reset() {
+        check(!isClosed.get()) { "ModelSession has already been closed" }
+        NativeBridge.nativeResetSession(engineHandle, sessionHandle)
+    }
+
     override fun close() {
         if (isClosed.compareAndSet(false, true)) {
-            NativeBridge.nativeDestroySession(engineHandle, sessionHandle)
+            try {
+                NativeBridge.nativeDestroySession(engineHandle, sessionHandle)
+            } catch (_: Exception) {
+                // Session may have already been cleaned up by engine shutdown
+            }
             if (modelHandle != 0L) {
                 client?.unloadModel(modelHandle)
             }

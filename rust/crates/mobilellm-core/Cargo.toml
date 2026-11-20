@@ -1,0 +1,10 @@
+[package]
+name = "mobilellm-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Core types, error models, and hardware capabilities for MobileLLM Rust subsystem"
+
+[dependencies]
+# Zero external dependencies for core data models and error contracts

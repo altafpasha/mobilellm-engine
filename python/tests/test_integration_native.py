@@ -11,7 +11,7 @@ from mobilellm.engine import Engine
 from mobilellm.models import ModelConfig, SamplingParams
 
 MODEL_PATH = "models/smollm2-135m-instruct-q4_k_m.gguf"
-LIB_PATH = "build_llama/runtime/libmobilellm.dylib"
+LIB_PATH = os.environ.get("MOBILELLM_LIB_PATH", "build/runtime/libmobilellm.dylib")
 
 
 @pytest.fixture(scope="module")
@@ -89,3 +89,20 @@ async def test_engine_async_native(check_environment: None) -> None:
         assert len(tokens) > 0
 
         await model.unload()
+
+
+def test_native_session_reset_and_logits(check_environment: None) -> None:
+    with NativeClient(lib_path=LIB_PATH) as client:
+        cfg = ModelConfig(model_path=MODEL_PATH, context_length=256, n_threads=2)
+        with client.load_model(cfg) as session:
+            tokens1 = list(session.generate("Hello", SamplingParams(max_tokens=2)))
+            assert len(tokens1) > 0
+
+            logits = session.get_last_logits()
+            assert len(logits) > 0, "Logits buffer should not be empty"
+
+            session.reset()
+
+            tokens2 = list(session.generate("Hello", SamplingParams(max_tokens=2)))
+            assert len(tokens2) > 0
+

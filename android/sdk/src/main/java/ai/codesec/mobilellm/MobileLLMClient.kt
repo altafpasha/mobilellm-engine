@@ -1,6 +1,7 @@
 package ai.codesec.mobilellm
 
 import android.content.Context
+import ai.codesec.mobilellm.models.BackendType
 import ai.codesec.mobilellm.models.ModelConfig
 import ai.codesec.mobilellm.models.ModelMetadata
 import ai.codesec.mobilellm.models.SessionConfig
@@ -67,6 +68,19 @@ class MobileLLMClient private constructor() : Closeable {
     }
 
     /**
+     * Safely transitions the engine compute backend to [targetBackend], draining
+     * in-flight inference, releasing GPU queues, and restoring CPU thread state.
+     */
+    suspend fun switchBackend(targetBackend: BackendType): Unit = withContext(Dispatchers.IO) {
+        check(!isClosed.get()) { "MobileLLMClient is closed" }
+        initMutex.withLock {
+            if (engineHandle != 0L) {
+                NativeBridge.nativeSwitchBackend(engineHandle, targetBackend.code)
+            }
+        }
+    }
+
+    /**
      * Loads a GGUF model into native memory and initializes an inference session.
      *
      * @param config Model path, compute backend preference, thread count, and context length.
@@ -90,14 +104,15 @@ class MobileLLMClient private constructor() : Closeable {
             )
         }
 
-        val modelHandle = NativeBridge.nativeLoadModel(
+        val modelHandle = NativeBridge.nativeLoadModelWithLayers(
             engineHandle = engineHandle,
             modelPath = config.modelPath,
             backend = config.preferredBackend.code,
             contextLength = config.contextLength,
             nThreads = config.nThreads,
             useMmap = config.useMmap,
-            memoryBudgetMb = config.memoryBudgetMb
+            memoryBudgetMb = config.memoryBudgetMb,
+            nGpuLayers = config.nGpuLayers
         )
 
         if (modelHandle == 0L) {
@@ -134,6 +149,14 @@ class MobileLLMClient private constructor() : Closeable {
         }
 
         ModelSession(engineHandle, sessionHandle, modelHandle, this@MobileLLMClient)
+    }
+
+    /**
+     * Resets conversation history and clears KV cache for the given session.
+     */
+    fun resetSession(session: ModelSession) {
+        check(!isClosed.get()) { "MobileLLMClient has already been closed" }
+        session.reset()
     }
 
     /**

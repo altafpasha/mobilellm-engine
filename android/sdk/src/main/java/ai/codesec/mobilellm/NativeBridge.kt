@@ -24,6 +24,9 @@ internal object NativeBridge {
     external fun nativeDestroy(engineHandle: Long)
 
     @JvmStatic
+    external fun nativeSwitchBackend(engineHandle: Long, backend: Int)
+
+    @JvmStatic
     external fun nativeLoadModel(
         engineHandle: Long,
         modelPath: String,
@@ -32,6 +35,18 @@ internal object NativeBridge {
         nThreads: Int,
         useMmap: Boolean,
         memoryBudgetMb: Float
+    ): Long
+
+    @JvmStatic
+    external fun nativeLoadModelWithLayers(
+        engineHandle: Long,
+        modelPath: String,
+        backend: Int,
+        contextLength: Int,
+        nThreads: Int,
+        useMmap: Boolean,
+        memoryBudgetMb: Float,
+        nGpuLayers: Int
     ): Long
 
     @JvmStatic
@@ -47,6 +62,9 @@ internal object NativeBridge {
 
     @JvmStatic
     external fun nativeDestroySession(engineHandle: Long, sessionHandle: Long)
+
+    @JvmStatic
+    external fun nativeResetSession(engineHandle: Long, sessionHandle: Long)
 
     @JvmStatic
     external fun nativeGenerate(
@@ -70,6 +88,9 @@ internal object NativeBridge {
 
     @JvmStatic
     external fun nativeDetectHardware(): String
+
+    @JvmStatic
+    external fun nativeGetGenerationDiagnostics(engineHandle: Long, sessionHandle: Long): String
 
     @JvmStatic
     external fun nativeInspectModel(modelPath: String): String

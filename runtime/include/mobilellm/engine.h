@@ -33,6 +33,8 @@ public:
     // Session Management
     virtual Result<SessionHandle> create_session(ModelHandle model, const SessionConfig& config) noexcept = 0;
     virtual Status destroy_session(SessionHandle session) noexcept = 0;
+    virtual Status reset_session(SessionHandle session) noexcept = 0;
+    virtual Result<std::vector<float>> get_last_logits(SessionHandle session) const noexcept = 0;
 
     // Generation Operations
     virtual Result<GenerationHandle> generate_async(
@@ -44,12 +46,26 @@ public:
 
     virtual Status cancel(GenerationHandle handle) noexcept = 0;
 
+    // Backend Switching
+    virtual Status switch_backend(BackendType target) noexcept = 0;
+
     // Hardware Inspection & Telemetry
     virtual EngineMetrics get_metrics() const noexcept = 0;
     virtual HardwareProfile query_hardware() const noexcept = 0;
     virtual ProcessMemoryTelemetry get_process_memory() const noexcept = 0;
     virtual Result<ContextTelemetry> get_session_telemetry(SessionHandle session) const noexcept = 0;
     virtual Status set_session_threads(SessionHandle session, uint32_t n_threads) noexcept = 0;
+
+    /**
+     * @brief Diagnostics for the most recently completed generation on this session.
+     *
+     * Returns a default-initialized struct (benchmark_status == "idle") when no generation has
+     * completed yet. Backend identity and offload evidence are filled from the backend's own
+     * session description, never from configuration intent.
+     */
+    virtual GenerationDiagnostics get_generation_diagnostics(SessionHandle /*session*/) const noexcept {
+        return GenerationDiagnostics{};
+    }
 };
 
 /**
@@ -58,5 +74,13 @@ public:
  * @return std::unique_ptr<IEngine> pointer to the created engine instance.
  */
 std::unique_ptr<IEngine> create_engine() noexcept;
+
+/**
+ * @brief Process-wide hardware detection (device model, SoC, GPU adapter).
+ *
+ * Independent of any engine instance so it can be used by `mllm_detect_hardware()` before a model
+ * is loaded. Returns real values on Android and an explicit "Host Machine" otherwise.
+ */
+HardwareProfile detect_hardware() noexcept;
 
 } // namespace mobilellm

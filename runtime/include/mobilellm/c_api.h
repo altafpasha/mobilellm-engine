@@ -54,6 +54,7 @@ typedef struct {
     bool use_mmap;
     bool use_mlock;
     float memory_budget_mb;
+    int32_t n_gpu_layers; // -1 = auto (all for GPU, 0 for CPU), >= 0 = explicit layer count
 } mllm_model_config_t;
 
 /**
@@ -134,6 +135,7 @@ typedef void (*mllm_complete_callback_fn)(mllm_status_t status, const mllm_metri
 // Engine Lifecycle
 MOBILELLM_EXPORT mllm_status_t mllm_engine_create(mllm_engine_t* out_engine);
 MOBILELLM_EXPORT mllm_status_t mllm_engine_destroy(mllm_engine_t engine);
+MOBILELLM_EXPORT mllm_status_t mllm_engine_switch_backend(mllm_engine_t engine, int32_t target_backend);
 
 // Model Management
 MOBILELLM_EXPORT mllm_status_t mllm_model_load(mllm_engine_t engine, const mllm_model_config_t* config, mllm_model_t* out_model);
@@ -143,6 +145,8 @@ MOBILELLM_EXPORT mllm_status_t mllm_model_inspect(const char* model_path, char* 
 // Session Management
 MOBILELLM_EXPORT mllm_status_t mllm_session_create(mllm_engine_t engine, mllm_model_t model, const mllm_session_config_t* config, mllm_session_t* out_session);
 MOBILELLM_EXPORT mllm_status_t mllm_session_destroy(mllm_engine_t engine, mllm_session_t session);
+MOBILELLM_EXPORT mllm_status_t mllm_session_reset(mllm_engine_t engine, mllm_session_t session);
+MOBILELLM_EXPORT mllm_status_t mllm_get_last_logits(mllm_engine_t engine, mllm_session_t session, float* out_buffer, size_t max_len, size_t* out_len);
 
 // Generation Operations
 MOBILELLM_EXPORT mllm_status_t mllm_generate(
@@ -164,6 +168,15 @@ MOBILELLM_EXPORT mllm_status_t mllm_detect_hardware(char* json_buffer, size_t ma
 MOBILELLM_EXPORT mllm_status_t mllm_get_process_memory(mllm_engine_t engine, mllm_process_memory_t* out_memory);
 MOBILELLM_EXPORT mllm_status_t mllm_get_session_telemetry(mllm_engine_t engine, mllm_session_t session, mllm_context_telemetry_t* out_telemetry);
 MOBILELLM_EXPORT mllm_status_t mllm_set_session_threads(mllm_engine_t engine, mllm_session_t session, uint32_t n_threads);
+
+/**
+ * @brief Serializes the structured diagnostics of the session's most recent generation to JSON.
+ *
+ * Returns a default ("idle") profile when no generation has completed. The buffer is truncated and
+ * null-terminated safely if @p max_len is too small; callers should provide at least ~2 KB.
+ */
+MOBILELLM_EXPORT mllm_status_t mllm_get_generation_diagnostics(mllm_engine_t engine, mllm_session_t session, char* json_buffer, size_t max_len);
+
 MOBILELLM_EXPORT const char* mllm_get_last_error(void);
 
 #ifdef __cplusplus

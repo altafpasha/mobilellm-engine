@@ -255,7 +255,7 @@ TEST_F(PerfRemediationTest, CApiAbiPreservation) {
     ASSERT_EQ(mllm_engine_create(&eng).code, 0);
 
     mllm_model_t mdl;
-    mllm_model_config_t m_cfg = {"/tmp/mock_model.gguf", 1, 2048, 4, false, false, 0.0f};
+    mllm_model_config_t m_cfg = {"/tmp/mock_model.gguf", 1, 2048, 4, false, false, 0.0f, 0};
     ASSERT_EQ(mllm_model_load(eng, &m_cfg, &mdl).code, 0);
 
     mllm_session_t sess;

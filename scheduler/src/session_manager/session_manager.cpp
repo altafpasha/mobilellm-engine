@@ -84,6 +84,24 @@ Status SessionManager::destroy_session(SessionHandle session) noexcept {
     return Status::ok();
 }
 
+Status SessionManager::reset_session(SessionHandle session) noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = sessions_.find(session);
+    if (it == sessions_.end()) {
+        return Status::error(StatusCode::SESSION_NOT_FOUND, "Session handle not recognized");
+    }
+
+    if (kv_manager_) {
+        kv_manager_->release_session_blocks(session);
+    }
+
+    it->second.current_tokens = 0;
+    it->second.turn_count = 0;
+    it->second.state = SessionState::IDLE;
+    it->second.last_active_us = get_current_time_us();
+    return Status::ok();
+}
+
 Result<SessionMetadata> SessionManager::get_session_info(SessionHandle session) const noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = sessions_.find(session);

@@ -108,7 +108,9 @@ response = model.generate(
 
 print(response.text)
 if response.metrics:
-    print(f"Generated {response.metrics.completion_tokens} tokens at {response.metrics.tokens_per_second:.1f} tok/s")
+    print(
+        f"Generated {response.metrics.completion_tokens} tokens at {response.metrics.tokens_per_second:.1f} tok/s"
+    )
 
 # Unload model and clean up
 model.unload()
@@ -142,6 +144,7 @@ Use `asyncio` for non-blocking execution in high-concurrency applications:
 import asyncio
 from mobilellm import Engine, SamplingParams
 
+
 async def main() -> None:
     async with Engine.async_client(endpoint="http://127.0.0.1:8080") as engine:
         model = await engine.load_model("./models/smollm2-135m-instruct-q4_k_m.gguf")
@@ -158,6 +161,7 @@ async def main() -> None:
             print(token, end="", flush=True)
         print()
 
+
 asyncio.run(main())
 ```
 
@@ -172,7 +176,9 @@ with Engine(use_native=True) as engine:
     model = engine.load_model("./models/smollm2-135m-instruct-q4_k_m.gguf")
 
     # Allocate dedicated session context
-    session = model.create_session(SessionConfig(max_context_tokens=1024, enable_prefix_caching=True))
+    session = model.create_session(
+        SessionConfig(max_context_tokens=1024, enable_prefix_caching=True)
+    )
 
     # Turn 1
     r1 = session.generate("Hi, my favorite color is teal.", SamplingParams(max_tokens=32))
