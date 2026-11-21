@@ -102,6 +102,8 @@ private:
         std::unique_ptr<Sampler> sampler;
         std::vector<float> reusable_logits; // PERF-03: persistent reusable logits buffer per session
         bool enable_prefix_caching{true};
+        uint32_t n_batch{512};
+        uint32_t n_ubatch{512};
         double model_load_ms{0.0};
         uint32_t n_threads{4};
         uint32_t kv_capacity_tokens{0};

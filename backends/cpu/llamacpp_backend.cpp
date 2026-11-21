@@ -525,11 +525,49 @@ Result<BackendSessionHandle> LlamaCppBackend::create_session(
     cparams.n_threads = static_cast<int32_t>(threads);
     cparams.n_threads_batch = static_cast<int32_t>(threads);
 
-    // Flash attention is supported by ggml-cpu (NEON/AVX), but NOT by ggml-vulkan.
-    // Enabling flash_attn with Vulkan offload causes ggml_backend_sched to split the compute graph
-    // back to CPU at every single attention block (hundreds of graph splits), resulting in
-    // catastrophic tensor transfer latency and output corruption on mobile Adreno GPUs.
-    bool use_flash_attn = (it->second->backend_type == BackendType::CPU_NEON);
+    // 1. Explicitly configure cparams.n_batch (e.g., 512, capped at n_ctx) and cparams.n_ubatch
+    // (e.g., 512 on CPU / 256 on Vulkan) instead of relying on implicit defaults.
+    uint32_t req_n_batch = config.n_batch > 0 ? config.n_batch : 512;
+    const char* env_batch = getenv("MOBILELLM_N_BATCH");
+    if (env_batch && *env_batch) {
+        int parsed = std::atoi(env_batch);
+        if (parsed > 0) {
+            req_n_batch = static_cast<uint32_t>(parsed);
+        }
+    }
+    cparams.n_batch = std::min(req_n_batch, cparams.n_ctx);
+
+    uint32_t req_n_ubatch = config.n_ubatch;
+    const char* env_ubatch = getenv("MOBILELLM_N_UBATCH");
+    if (env_ubatch && *env_ubatch) {
+        int parsed = std::atoi(env_ubatch);
+        if (parsed > 0) {
+            req_n_ubatch = static_cast<uint32_t>(parsed);
+        }
+    }
+    if (req_n_ubatch == 0) {
+        req_n_ubatch = (it->second->backend_type == BackendType::VULKAN) ? 256 : 512;
+    }
+    cparams.n_ubatch = std::min(req_n_ubatch, static_cast<uint32_t>(cparams.n_batch));
+
+    // 2. Make cparams.flash_attn configurable (instead of unconditionally forcing it off for all Vulkan devices)
+    // so we can benchmark FlashAttention on Vulkan once llama.cpp is updated, while keeping the safe default
+    // if graph splits increase.
+    bool use_flash_attn = false;
+    if (config.flash_attn == 1) {
+        use_flash_attn = true;
+    } else if (config.flash_attn == 0) {
+        use_flash_attn = false;
+    } else {
+        const char* fa_env = getenv("MOBILELLM_VULKAN_FLASH_ATTN");
+        if (!fa_env) fa_env = getenv("GGML_VULKAN_FLASH_ATTN");
+        bool allow_vk_fa = (fa_env && (strcmp(fa_env, "1") == 0 || strcmp(fa_env, "true") == 0 || strcmp(fa_env, "TRUE") == 0));
+        if (it->second->backend_type == BackendType::CPU_NEON) {
+            use_flash_attn = true;
+        } else {
+            use_flash_attn = allow_vk_fa;
+        }
+    }
     cparams.flash_attn = use_flash_attn;
     cparams.no_perf = false;
 
@@ -563,8 +601,8 @@ Result<BackendSessionHandle> LlamaCppBackend::create_session(
     }
 #endif // MOBILELLM_ENABLE_TENSOR_TRACE
 
-    LOGI("Creating session: ctx=%u, threads=%u, flash_attn=%s, prefix_caching=%s",
-         config.max_context_tokens, threads, use_flash_attn ? "true" : "false",
+    LOGI("Creating session: ctx=%u, n_batch=%u, n_ubatch=%u, threads=%u, flash_attn=%s, prefix_caching=%s",
+         cparams.n_ctx, cparams.n_batch, cparams.n_ubatch, threads, use_flash_attn ? "true" : "false",
          config.enable_prefix_caching ? "true" : "false");
 
     reset_graph_facts();
@@ -596,6 +634,8 @@ Result<BackendSessionHandle> LlamaCppBackend::create_session(
     sess->threadpool = tpool;
     sess->sampler = std::make_unique<Sampler>(42 + static_cast<uint64_t>(s_handle));
     sess->enable_prefix_caching = config.enable_prefix_caching;
+    sess->n_batch = static_cast<uint32_t>(cparams.n_batch);
+    sess->n_ubatch = static_cast<uint32_t>(cparams.n_ubatch);
     sess->n_threads = threads;
     sess->model_load_ms = it->second->load_ms;
     sess->kv_capacity_tokens = static_cast<uint32_t>(llama_n_ctx(ctx));
@@ -752,28 +792,63 @@ Status LlamaCppBackend::evaluate_prompt(
 
     const llama_perf_context_data perf_before = llama_perf_context(sess->raw_ctx);
 
-    // A helper that decodes an explicit token range with explicit positions. Positions must be
-    // explicit: after removing KV cells the implicit "continue from last position" behaviour of
-    // llama_batch_get_one() depends on internal cache bookkeeping that we do not want to rely on.
+    uint32_t evaluated_tokens = 0;
+    uint32_t cached_tokens = 0;
+    int32_t eval_calls = 0;
+
+    // A helper that decodes an explicit token range with explicit positions chunked by n_batch.
+    // Positions must be explicit: after removing KV cells the implicit "continue from last position"
+    // behaviour of llama_batch_get_one() depends on internal cache bookkeeping that we do not want to rely on.
+    // Prompt evaluation is chunked into slices of at most n_batch tokens (as required by llama.cpp's
+    // input tensor allocations and GGML_ASSERT(n_tokens_all <= cparams.n_batch)).
+    // Logits (batch.logits[i] = 1) are requested only for the very last token of the final chunk so we
+    // do not compute or transfer unnecessary logits on intermediate chunks.
     auto decode_range = [&](size_t begin, size_t end) -> bool {
-        const int32_t count = static_cast<int32_t>(end - begin);
-        if (count <= 0) return true;
-        std::vector<llama_token> batch_tokens(tokens.begin() + static_cast<ptrdiff_t>(begin),
-                                              tokens.begin() + static_cast<ptrdiff_t>(end));
-        std::vector<llama_pos> batch_pos(count);
-        for (int32_t i = 0; i < count; ++i) {
-            batch_pos[i] = static_cast<llama_pos>(begin + static_cast<size_t>(i));
+        if (end <= begin) return true;
+
+        const size_t batch_limit = (sess->n_batch > 0) ? sess->n_batch
+                                 : (llama_n_batch(sess->raw_ctx) > 0 ? llama_n_batch(sess->raw_ctx) : 512);
+
+        size_t chunk_start = begin;
+        while (chunk_start < end) {
+            const size_t chunk_end = std::min(chunk_start + batch_limit, end);
+            const int32_t chunk_len = static_cast<int32_t>(chunk_end - chunk_start);
+            const bool is_last_chunk = (chunk_end == end);
+
+            std::vector<llama_token> batch_tokens(tokens.begin() + static_cast<ptrdiff_t>(chunk_start),
+                                                  tokens.begin() + static_cast<ptrdiff_t>(chunk_end));
+            std::vector<llama_pos> batch_pos(chunk_len);
+            std::vector<int8_t> batch_logits(chunk_len, 0);
+
+            for (int32_t i = 0; i < chunk_len; ++i) {
+                batch_pos[i] = static_cast<llama_pos>(chunk_start + static_cast<size_t>(i));
+            }
+
+            if (is_last_chunk) {
+                batch_logits[chunk_len - 1] = 1;
+            }
+
+            llama_batch batch = {
+                chunk_len,
+                batch_tokens.data(),
+                nullptr,
+                batch_pos.data(),
+                nullptr,
+                nullptr,
+                batch_logits.data()
+            };
+
+            int ret = llama_decode(sess->raw_ctx, batch);
+            if (ret != 0) {
+                LOGE("llama_decode failed on chunk [%zu, %zu) with code %d", chunk_start, chunk_end, ret);
+                return false;
+            }
+
+            eval_calls++;
+            chunk_start = chunk_end;
         }
-        llama_batch batch = {
-            count,
-            batch_tokens.data(),
-            nullptr,
-            batch_pos.data(),
-            nullptr,
-            nullptr,
-            nullptr
-        };
-        return llama_decode(sess->raw_ctx, batch) == 0;
+
+        return true;
     };
 
     // Calculate common prefix with existing session history. Prefix caching is opt-out via
@@ -787,10 +862,6 @@ Status LlamaCppBackend::evaluate_prompt(
             common_prefix++;
         }
     }
-
-    uint32_t evaluated_tokens = 0;
-    uint32_t cached_tokens = 0;
-    int32_t eval_calls = 0;
 
     if (common_prefix == tokens.size() && !tokens.empty() && sess->enable_prefix_caching) {
         // ---------------------------------------------------------------------------------
@@ -818,7 +889,6 @@ Status LlamaCppBackend::evaluate_prompt(
         }
         evaluated_tokens = 1;
         cached_tokens = static_cast<uint32_t>(rewind);
-        eval_calls = 1;
     } else if (common_prefix > 0) {
         // Rebuilt conversation prompt or continuation sharing a prefix with history.
         // Drop KV cells past the divergence point and decode only the new suffix.
@@ -831,7 +901,6 @@ Status LlamaCppBackend::evaluate_prompt(
                                      "llama_decode failed on prompt suffix");
             }
             evaluated_tokens = static_cast<uint32_t>(tokens.size() - common_prefix);
-            eval_calls = 1;
         }
         cached_tokens = static_cast<uint32_t>(common_prefix);
     } else {
@@ -842,7 +911,6 @@ Status LlamaCppBackend::evaluate_prompt(
         }
         evaluated_tokens = static_cast<uint32_t>(tokens.size());
         cached_tokens = 0;
-        eval_calls = 1;
     }
 
     const llama_perf_context_data perf_after = llama_perf_context(sess->raw_ctx);

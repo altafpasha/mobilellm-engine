@@ -63,6 +63,9 @@ typedef struct {
 typedef struct {
     uint32_t max_context_tokens;
     bool enable_prefix_caching;
+    uint32_t n_batch;
+    uint32_t n_ubatch;
+    int32_t flash_attn;
 } mllm_session_config_t;
 
 /**
