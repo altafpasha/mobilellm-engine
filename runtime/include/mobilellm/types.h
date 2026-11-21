@@ -111,6 +111,9 @@ struct ModelLoadConfig {
 struct SessionConfig {
     uint32_t max_context_tokens{2048};
     bool enable_prefix_caching{true};
+    uint32_t n_batch{512};
+    uint32_t n_ubatch{0}; // 0 = auto (512 on CPU, 256 on Vulkan)
+    int32_t flash_attn{-1}; // -1 = auto (true on CPU, false on Vulkan unless overridden), 0 = force false, 1 = force true
 };
 
 /**

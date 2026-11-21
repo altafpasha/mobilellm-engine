@@ -534,3 +534,80 @@ TEST_F(InferenceCorrectnessTest, Workstream6_ResourceConcurrencySafety) {
     backend.unload_model(m_handle);
     backend.shutdown();
 }
+
+// ============================================================================
+// Chunked Prompt Evaluation Test (Prompt Longer than n_batch)
+// ============================================================================
+
+TEST_F(InferenceCorrectnessTest, PromptLongerThanNBatch_ChunkedEvaluation) {
+    if (!std::filesystem::exists(smollm_path)) {
+        GTEST_SKIP() << "SmolLM2 model not found at " << smollm_path;
+    }
+
+    LlamaCppBackend backend;
+    ASSERT_TRUE(backend.initialize(BackendConfig{}).is_ok());
+
+    ModelLoadConfig m_cfg;
+    m_cfg.model_path = smollm_path;
+    m_cfg.preferred_backend = BackendType::CPU_NEON;
+    m_cfg.context_length = 2048;
+    m_cfg.n_threads = 4;
+
+    auto m_res = backend.load_model(m_cfg);
+    ASSERT_TRUE(m_res.is_ok()) << "Failed to load SmolLM2 model: " << m_res.status().message;
+    BackendModelHandle m_handle = m_res.value();
+
+    // Explicitly configure n_batch = 256 on a 2048-token context session
+    SessionConfig s_cfg;
+    s_cfg.max_context_tokens = 2048;
+    s_cfg.n_batch = 256;
+    s_cfg.n_ubatch = 256;
+    s_cfg.enable_prefix_caching = false;
+
+    auto s_res = backend.create_session(m_handle, s_cfg);
+    ASSERT_TRUE(s_res.is_ok()) << "Failed to create session with n_batch=256: " << s_res.status().message;
+    BackendSessionHandle s_handle = s_res.value();
+
+    // Construct a prompt of at least 1024 tokens (4x larger than n_batch = 256)
+    std::string repeat_unit = "The quick brown fox jumps over the lazy dog in the sunny summer afternoon. ";
+    std::string long_prompt = "<|im_start|>user\n";
+    while (long_prompt.size() < 6000) {
+        long_prompt += repeat_unit;
+    }
+    long_prompt += "\nSummarize the text in one word.<|im_end|>\n<|im_start|>assistant\n";
+
+    std::vector<int32_t> out_tokens;
+    PromptEvalInfo out_info{};
+    Status eval_st = backend.evaluate_prompt(s_handle, long_prompt, out_tokens, &out_info);
+
+    ASSERT_TRUE(eval_st.is_ok()) << "evaluate_prompt failed on prompt longer than n_batch: " << eval_st.message;
+    EXPECT_GE(out_tokens.size(), 1024u) << "Expected prompt tokens to be at least 1024, got " << out_tokens.size();
+    EXPECT_GE(out_info.eval_calls, 4) << "Expected at least 4 chunk decode calls for 1024 tokens with n_batch=256, got " << out_info.eval_calls;
+    EXPECT_EQ(out_info.prompt_tokens, out_tokens.size());
+
+    // Verify that logits for the final token are valid and non-NaN
+    auto logits_res = backend.get_last_logits(s_handle);
+    ASSERT_TRUE(logits_res.is_ok());
+    const auto& logits = logits_res.value();
+    ASSERT_FALSE(logits.empty());
+    bool has_nan = false;
+    for (float v : logits) {
+        if (std::isnan(v) || std::isinf(v)) {
+            has_nan = true;
+            break;
+        }
+    }
+    EXPECT_FALSE(has_nan) << "Logits contain NaN or Inf values after chunked prompt evaluation!";
+
+    // Verify that subsequent token generation succeeds
+    SamplingParams sparams;
+    sparams.temperature = 0.0f; // Greedy
+    sparams.max_tokens = 4;
+    auto tok_res = backend.sample_next_token(s_handle, sparams);
+    ASSERT_TRUE(tok_res.is_ok()) << "sample_next_token failed after chunked prompt evaluation: " << tok_res.status().message;
+    EXPECT_GE(tok_res.value(), 0);
+
+    EXPECT_TRUE(backend.destroy_session(s_handle).is_ok());
+    EXPECT_TRUE(backend.unload_model(m_handle).is_ok());
+    EXPECT_TRUE(backend.shutdown().is_ok());
+}

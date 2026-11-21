@@ -292,9 +292,12 @@ Java_ai_codesec_mobilellm_NativeBridge_nativeCreateSession(
     jint max_context_tokens,
     jboolean enable_prefix_caching
 ) {
-    mllm_session_config_t cfg;
+    mllm_session_config_t cfg = {};
     cfg.max_context_tokens = max_context_tokens > 0 ? max_context_tokens : 2048;
     cfg.enable_prefix_caching = enable_prefix_caching;
+    cfg.n_batch = 512;
+    cfg.n_ubatch = 0;
+    cfg.flash_attn = -1;
 
     mllm_session_t session = 0;
     mllm_status_t st = mllm_session_create(

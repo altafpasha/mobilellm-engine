@@ -259,7 +259,7 @@ TEST_F(PerfRemediationTest, CApiAbiPreservation) {
     ASSERT_EQ(mllm_model_load(eng, &m_cfg, &mdl).code, 0);
 
     mllm_session_t sess;
-    mllm_session_config_t s_cfg = {2048, false};
+    mllm_session_config_t s_cfg = {2048, false, 512, 0, -1};
     ASSERT_EQ(mllm_session_create(eng, mdl, &s_cfg, &sess).code, 0);
 
     mllm_sampling_params_t sparams = {0.0f, 0.9f, 40, 0.05f, 1.0f, 5};

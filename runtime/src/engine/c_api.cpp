@@ -287,6 +287,9 @@ mllm_status_t mllm_session_create(
     if (config) {
         cpp_cfg.max_context_tokens = config->max_context_tokens > 0 ? config->max_context_tokens : 2048;
         cpp_cfg.enable_prefix_caching = config->enable_prefix_caching;
+        if (config->n_batch > 0) cpp_cfg.n_batch = config->n_batch;
+        if (config->n_ubatch > 0) cpp_cfg.n_ubatch = config->n_ubatch;
+        cpp_cfg.flash_attn = config->flash_attn;
     }
 
     auto res = engine->create_session(model, cpp_cfg);
