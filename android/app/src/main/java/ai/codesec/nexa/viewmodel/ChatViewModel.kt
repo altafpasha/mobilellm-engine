@@ -47,13 +47,165 @@ enum class NexaScreen {
     DASHBOARD
 }
 
+data class MediaAttachment(
+    val id: String = UUID.randomUUID().toString(),
+    val uri: String,
+    val mimeType: String,
+    val name: String,
+    val sizeBytes: Long = 0L,
+    val isAudio: Boolean = false
+)
+
 data class ChatMessage(
     val id: String = UUID.randomUUID().toString(),
     val sender: MessageSender,
     val text: String,
+    val attachments: List<MediaAttachment> = emptyList(),
     val metrics: GenerationMetrics? = null,
     val isStreaming: Boolean = false,
     val timestamp: Long = System.currentTimeMillis()
+)
+
+data class Conversation(
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val modelName: String?,
+    val messages: List<ChatMessage> = emptyList(),
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
+enum class DownloadStatus {
+    QUEUED, DOWNLOADING, PAUSED, COMPLETED, FAILED, CANCELLED
+}
+
+data class DownloadItem(
+    val id: String,
+    val modelName: String,
+    val downloadUrl: String,
+    val targetFileName: String,
+    val totalBytes: Long,
+    val downloadedBytes: Long = 0L,
+    val speedBytesPerSec: Double = 0.0,
+    val progress: Float = 0.0f,
+    val status: DownloadStatus = DownloadStatus.QUEUED,
+    val errorMessage: String? = null
+)
+
+data class DiscoverModelItem(
+    val id: String,
+    val name: String,
+    val architecture: String,
+    val parameters: String,
+    val quantization: String,
+    val downloadSizeMb: Long,
+    val ramRequiredMb: Long,
+    val contextLength: Int,
+    val description: String,
+    val downloadUrl: String,
+    val filename: String,
+    val category: String,
+    val license: String = "Apache-2.0",
+    val recommendedDevice: String = "Snapdragon 8 Gen 2 / 8 Gen 3"
+)
+
+val DEFAULT_DISCOVER_CATALOG = listOf(
+    DiscoverModelItem(
+        id = "smollm2-135m",
+        name = "SmolLM2-135M-Instruct",
+        architecture = "Llama",
+        parameters = "135M",
+        quantization = "Q4_K_M",
+        downloadSizeMb = 98L,
+        ramRequiredMb = 350L,
+        contextLength = 2048,
+        description = "Ultra-compact mobile language model. Exceptional token generation speed (150+ tok/s on ARM NEON).",
+        downloadUrl = "https://huggingface.co/HuggingFaceTB/SmolLM2-135M-Instruct-GGUF/resolve/main/smollm2-135m-instruct-q4_k_m.gguf",
+        filename = "smollm2-135m-instruct-q4_k_m.gguf",
+        category = "Ultra-Fast",
+        license = "Apache-2.0",
+        recommendedDevice = "Any ARM64 Device"
+    ),
+    DiscoverModelItem(
+        id = "qwen2.5-0.5b",
+        name = "Qwen2.5-0.5B-Instruct",
+        architecture = "Qwen2",
+        parameters = "0.5B",
+        quantization = "Q4_K_M",
+        downloadSizeMb = 398L,
+        ramRequiredMb = 850L,
+        contextLength = 4096,
+        description = "Alibaba Cloud's ultra-efficient sub-1B model with great instruction following and multi-turn capabilities.",
+        downloadUrl = "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf",
+        filename = "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+        category = "Balanced",
+        license = "Qwen License",
+        recommendedDevice = "Snapdragon 7/8 Series"
+    ),
+    DiscoverModelItem(
+        id = "qwen2.5-1.5b",
+        name = "Qwen2.5-1.5B-Instruct",
+        architecture = "Qwen2",
+        parameters = "1.5B",
+        quantization = "Q4_K_M",
+        downloadSizeMb = 1117L,
+        ramRequiredMb = 1850L,
+        contextLength = 4096,
+        description = "Balanced coding, reasoning, and multi-lingual instruction model. Excellent benchmark accuracy on mobile.",
+        downloadUrl = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        filename = "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        category = "Reasoning",
+        license = "Qwen License",
+        recommendedDevice = "Snapdragon 8 Gen 2 / 8 Gen 3"
+    ),
+    DiscoverModelItem(
+        id = "llama-3.2-1b",
+        name = "Llama-3.2-1B-Instruct",
+        architecture = "Llama",
+        parameters = "1.2B",
+        quantization = "Q4_K_M",
+        downloadSizeMb = 810L,
+        ramRequiredMb = 1400L,
+        contextLength = 4096,
+        description = "Meta's official lightweight edge model designed for high-throughput mobile summarization and chat.",
+        downloadUrl = "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+        filename = "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+        category = "Balanced",
+        license = "Llama 3.2 Community",
+        recommendedDevice = "Snapdragon 8 Gen 1/2/3"
+    ),
+    DiscoverModelItem(
+        id = "gemma-2-2b",
+        name = "Gemma-2-2B-IT",
+        architecture = "Gemma2",
+        parameters = "2.2B",
+        quantization = "Q4_K_M",
+        downloadSizeMb = 1640L,
+        ramRequiredMb = 2400L,
+        contextLength = 4096,
+        description = "Google DeepMind's state-of-the-art small model with sliding window attention and exceptional reasoning.",
+        downloadUrl = "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf",
+        filename = "gemma-2-2b-it-Q4_K_M.gguf",
+        category = "Reasoning",
+        license = "Gemma Terms of Use",
+        recommendedDevice = "Snapdragon 8 Gen 2 / 12GB+ RAM"
+    ),
+    DiscoverModelItem(
+        id = "deepseek-r1-1.5b",
+        name = "DeepSeek-R1-Distill-1.5B",
+        architecture = "Qwen2",
+        parameters = "1.5B",
+        quantization = "Q4_K_M",
+        downloadSizeMb = 1120L,
+        ramRequiredMb = 1850L,
+        contextLength = 4096,
+        description = "DeepSeek R1 reasoning traces distilled into a compact 1.5B model for step-by-step mathematical reasoning.",
+        downloadUrl = "https://huggingface.co/unsloth/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf",
+        filename = "DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf",
+        category = "Reasoning",
+        license = "MIT",
+        recommendedDevice = "Snapdragon 8 Gen 2 / 8 Gen 3"
+    )
 )
 
 data class BenchmarkRun(
@@ -82,9 +234,6 @@ data class ChatUiState(
     val gpuLayers: Int = -1,
     val threadCount: Int = run {
         val totalCores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
-        // On 8+ core mobile SoCs (e.g. Snapdragon big.LITTLE / DynamIQ), clamp default inference threads
-        // to 4 performance cores. Using all 8 cores causes thread barrier stalling on slow Cortex-A510
-        // efficiency cores and severe memory bandwidth / thermal thrashing.
         if (totalCores >= 8) 4 else minOf(4, totalCores)
     },
     val engineVersion: String = "0.1.0-dev",
@@ -99,9 +248,9 @@ data class ChatUiState(
     val nativeVmSizeMb: Double = 0.0,
     val modelMemoryMb: Double = 0.0,
     val kvCacheMemoryMb: Double = 0.0,
-    val contextCapacity: Int = 0,
+    val contextCapacity: Int = 4096,
     val usedContextTokens: Int = 0,
-    val remainingContextTokens: Int = 0,
+    val remainingContextTokens: Int = 4096,
     val isContextAvailable: Boolean = false,
     val thermalStatus: Int = 0,
     val thermalStatusName: String = "Normal (0)",
@@ -112,7 +261,22 @@ data class ChatUiState(
     val errorMessage: String? = null,
     val importProgress: Float? = null,
     val benchmarkHistory: List<BenchmarkRun> = emptyList(),
-    val isBenchmarking: Boolean = false
+    val isBenchmarking: Boolean = false,
+
+    // On-Device AI Chat Experience States
+    val isStatsDashboardVisible: Boolean = true,
+    val isModelSelectorOpen: Boolean = false,
+    val isInferenceSettingsOpen: Boolean = false,
+    val isChatHistoryOpen: Boolean = false,
+    val isRuntimeInfoOpen: Boolean = false,
+    val isModelDetailsOpen: Boolean = false,
+    val selectedModelFileForDetails: File? = null,
+    val selectedDiscoverModelForDetails: DiscoverModelItem? = null,
+    val pendingAttachments: List<MediaAttachment> = emptyList(),
+    val conversations: List<Conversation> = emptyList(),
+    val activeConversationId: String? = null,
+    val activeDownloads: Map<String, DownloadItem> = emptyMap(),
+    val discoverCatalog: List<DiscoverModelItem> = DEFAULT_DISCOVER_CATALOG
 )
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
@@ -469,9 +633,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        val attachments = _uiState.value.pendingAttachments
         val userMsg = ChatMessage(
             sender = MessageSender.USER,
-            text = trimmed
+            text = trimmed,
+            attachments = attachments
         )
         val assistantMsgId = UUID.randomUUID().toString()
         val assistantMsg = ChatMessage(
@@ -485,7 +651,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             it.copy(
                 messages = it.messages + userMsg + assistantMsg,
                 isGenerating = true,
-                errorMessage = null
+                errorMessage = null,
+                pendingAttachments = emptyList()
             )
         }
 
@@ -789,6 +956,305 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun dismissError() {
         _uiState.update { it.copy(errorMessage = null) }
+    }
+
+    // =========================================================================
+    // ON-DEVICE MODEL DOWNLOAD MANAGER
+    // =========================================================================
+
+    private val downloadJobs = mutableMapOf<String, Job>()
+
+    fun startModelDownload(item: DiscoverModelItem) {
+        val targetFile = File(modelsDir, item.filename)
+        if (targetFile.exists() && targetFile.length() > 0) {
+            refreshModelsList()
+            return
+        }
+
+        val downloadId = item.id
+        val downloadItem = DownloadItem(
+            id = downloadId,
+            modelName = item.name,
+            downloadUrl = item.downloadUrl,
+            targetFileName = item.filename,
+            totalBytes = item.downloadSizeMb * 1024L * 1024L,
+            status = DownloadStatus.DOWNLOADING
+        )
+
+        _uiState.update {
+            it.copy(activeDownloads = it.activeDownloads + (downloadId to downloadItem))
+        }
+
+        downloadJobs[downloadId]?.cancel()
+        downloadJobs[downloadId] = viewModelScope.launch(Dispatchers.IO) {
+            val tempFile = File(modelsDir, "${item.filename}.download")
+            var downloaded = if (tempFile.exists()) tempFile.length() else 0L
+            var connection: java.net.HttpURLConnection? = null
+            try {
+                val url = java.net.URL(item.downloadUrl)
+                connection = url.openConnection() as java.net.HttpURLConnection
+                connection.connectTimeout = 15000
+                connection.readTimeout = 30000
+                connection.instanceFollowRedirects = true
+                if (downloaded > 0) {
+                    connection.setRequestProperty("Range", "bytes=$downloaded-")
+                }
+                connection.connect()
+
+                val responseCode = connection.responseCode
+                val isPartial = responseCode == java.net.HttpURLConnection.HTTP_PARTIAL
+                val isOk = responseCode == java.net.HttpURLConnection.HTTP_OK
+
+                if (!isPartial && !isOk) {
+                    throw java.io.IOException("HTTP error response: $responseCode")
+                }
+
+                val contentLength = connection.contentLengthLong
+                val totalBytes = if (contentLength > 0) {
+                    if (isPartial) contentLength + downloaded else contentLength
+                } else {
+                    item.downloadSizeMb * 1024L * 1024L
+                }
+
+                val append = isPartial && downloaded > 0
+                val outputStream = java.io.FileOutputStream(tempFile, append)
+                val inputStream = connection.inputStream
+
+                val buffer = ByteArray(64 * 1024)
+                var bytesRead: Int
+                var lastSpeedCalcTime = System.currentTimeMillis()
+                var bytesSinceLastSpeedCalc = 0L
+
+                while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                    outputStream.write(buffer, 0, bytesRead)
+                    downloaded += bytesRead
+                    bytesSinceLastSpeedCalc += bytesRead
+
+                    val now = System.currentTimeMillis()
+                    val timeDelta = now - lastSpeedCalcTime
+                    if (timeDelta >= 500) {
+                        val speed = (bytesSinceLastSpeedCalc.toDouble() / (timeDelta.toDouble() / 1000.0))
+                        val progress = if (totalBytes > 0) (downloaded.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f) else 0f
+                        _uiState.update { state ->
+                            val current = state.activeDownloads[downloadId] ?: downloadItem
+                            state.copy(
+                                activeDownloads = state.activeDownloads + (downloadId to current.copy(
+                                    downloadedBytes = downloaded,
+                                    totalBytes = totalBytes,
+                                    speedBytesPerSec = speed,
+                                    progress = progress,
+                                    status = DownloadStatus.DOWNLOADING
+                                ))
+                            )
+                        }
+                        lastSpeedCalcTime = now
+                        bytesSinceLastSpeedCalc = 0L
+                    }
+                }
+                outputStream.flush()
+                outputStream.close()
+                inputStream.close()
+
+                if (tempFile.exists()) {
+                    tempFile.renameTo(targetFile)
+                }
+
+                _uiState.update { state ->
+                    val current = state.activeDownloads[downloadId] ?: downloadItem
+                    state.copy(
+                        activeDownloads = state.activeDownloads + (downloadId to current.copy(
+                            downloadedBytes = totalBytes,
+                            progress = 1.0f,
+                            status = DownloadStatus.COMPLETED
+                        ))
+                    )
+                }
+                refreshModelsList()
+                refreshSystemStats()
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) {
+                    _uiState.update { state ->
+                        val current = state.activeDownloads[downloadId] ?: downloadItem
+                        state.copy(
+                            activeDownloads = state.activeDownloads + (downloadId to current.copy(status = DownloadStatus.PAUSED))
+                        )
+                    }
+                } else {
+                    Log.e(TAG, "Download failed for ${item.name}", e)
+                    _uiState.update { state ->
+                        val current = state.activeDownloads[downloadId] ?: downloadItem
+                        state.copy(
+                            activeDownloads = state.activeDownloads + (downloadId to current.copy(
+                                status = DownloadStatus.FAILED,
+                                errorMessage = e.message
+                            ))
+                        )
+                    }
+                }
+            } finally {
+                connection?.disconnect()
+            }
+        }
+    }
+
+    fun pauseModelDownload(downloadId: String) {
+        downloadJobs[downloadId]?.cancel()
+        _uiState.update { state ->
+            val item = state.activeDownloads[downloadId] ?: return@update state
+            state.copy(activeDownloads = state.activeDownloads + (downloadId to item.copy(status = DownloadStatus.PAUSED)))
+        }
+    }
+
+    fun cancelModelDownload(downloadId: String) {
+        downloadJobs[downloadId]?.cancel()
+        val item = _uiState.value.activeDownloads[downloadId]
+        if (item != null) {
+            val tempFile = File(modelsDir, "${item.targetFileName}.download")
+            if (tempFile.exists()) tempFile.delete()
+        }
+        _uiState.update { state ->
+            state.copy(activeDownloads = state.activeDownloads - downloadId)
+        }
+    }
+
+    // =========================================================================
+    // CHAT HISTORY & CONVERSATION MANAGEMENT
+    // =========================================================================
+
+    fun newConversation() {
+        val currentMsgs = _uiState.value.messages
+        val activeId = _uiState.value.activeConversationId
+        var convs = _uiState.value.conversations
+
+        if (currentMsgs.isNotEmpty()) {
+            val title = currentMsgs.firstOrNull { it.sender == MessageSender.USER }?.text?.take(36) ?: "Chat ${convs.size + 1}"
+            val existing = convs.find { it.id == activeId }
+            if (existing != null) {
+                convs = convs.map { if (it.id == activeId) it.copy(messages = currentMsgs, updatedAt = System.currentTimeMillis()) else it }
+            } else {
+                val newConv = Conversation(
+                    id = activeId ?: UUID.randomUUID().toString(),
+                    title = title,
+                    modelName = _uiState.value.loadedModelName,
+                    messages = currentMsgs
+                )
+                convs = listOf(newConv) + convs
+            }
+        }
+
+        val freshId = UUID.randomUUID().toString()
+        _uiState.update {
+            it.copy(
+                activeConversationId = freshId,
+                messages = emptyList(),
+                conversations = convs,
+                isChatHistoryOpen = false
+            )
+        }
+    }
+
+    fun switchConversation(id: String) {
+        val target = _uiState.value.conversations.find { it.id == id } ?: return
+        _uiState.update {
+            it.copy(
+                activeConversationId = target.id,
+                messages = target.messages,
+                isChatHistoryOpen = false
+            )
+        }
+    }
+
+    fun deleteConversation(id: String) {
+        _uiState.update { state ->
+            val updated = state.conversations.filter { it.id != id }
+            val newActive = if (state.activeConversationId == id) null else state.activeConversationId
+            val newMsgs = if (state.activeConversationId == id) emptyList() else state.messages
+            state.copy(
+                conversations = updated,
+                activeConversationId = newActive,
+                messages = newMsgs
+            )
+        }
+    }
+
+    fun renameConversation(id: String, newTitle: String) {
+        _uiState.update { state ->
+            state.copy(
+                conversations = state.conversations.map {
+                    if (it.id == id) it.copy(title = newTitle, updatedAt = System.currentTimeMillis()) else it
+                }
+            )
+        }
+    }
+
+    // =========================================================================
+    // MESSAGE ACTIONS & ATTACHMENTS
+    // =========================================================================
+
+    fun deleteMessage(id: String) {
+        _uiState.update { state ->
+            state.copy(messages = state.messages.filter { it.id != id })
+        }
+    }
+
+    fun editAndResendMessage(id: String, newText: String) {
+        val messages = _uiState.value.messages
+        val idx = messages.indexOfFirst { it.id == id }
+        if (idx == -1) return
+        val pruned = messages.subList(0, idx)
+        _uiState.update { it.copy(messages = pruned) }
+        sendMessage(newText)
+    }
+
+    fun addAttachment(attachment: MediaAttachment) {
+        if (_uiState.value.pendingAttachments.size >= 10) return
+        _uiState.update { it.copy(pendingAttachments = it.pendingAttachments + attachment) }
+    }
+
+    fun removeAttachment(id: String) {
+        _uiState.update { it.copy(pendingAttachments = it.pendingAttachments.filter { it.id != id }) }
+    }
+
+    fun clearAttachments() {
+        _uiState.update { it.copy(pendingAttachments = emptyList()) }
+    }
+
+    // =========================================================================
+    // UI BOTTOM SHEETS & PANELS TOGGLE
+    // =========================================================================
+
+    fun toggleStatsDashboard() {
+        _uiState.update { it.copy(isStatsDashboardVisible = !it.isStatsDashboardVisible) }
+    }
+
+    fun setStatsDashboardVisible(visible: Boolean) {
+        _uiState.update { it.copy(isStatsDashboardVisible = visible) }
+    }
+
+    fun setModelSelectorOpen(open: Boolean) {
+        _uiState.update { it.copy(isModelSelectorOpen = open) }
+    }
+
+    fun setInferenceSettingsOpen(open: Boolean) {
+        _uiState.update { it.copy(isInferenceSettingsOpen = open) }
+    }
+
+    fun setChatHistoryOpen(open: Boolean) {
+        _uiState.update { it.copy(isChatHistoryOpen = open) }
+    }
+
+    fun setRuntimeInfoOpen(open: Boolean) {
+        _uiState.update { it.copy(isRuntimeInfoOpen = open) }
+    }
+
+    fun setModelDetailsOpen(open: Boolean, file: File? = null, discoverItem: DiscoverModelItem? = null) {
+        _uiState.update {
+            it.copy(
+                isModelDetailsOpen = open,
+                selectedModelFileForDetails = file,
+                selectedDiscoverModelForDetails = discoverItem
+            )
+        }
     }
 
     override fun onCleared() {

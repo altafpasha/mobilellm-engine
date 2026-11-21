@@ -71,16 +71,18 @@ class MainActivity : ComponentActivity() {
                 Scaffold(
                     containerColor = ObsidianBackground,
                     bottomBar = {
-                        ModelLabBottomNav(
-                            currentScreen = uiState.currentScreen,
-                            onSelectScreen = { viewModel.setScreen(it) }
-                        )
+                        if (uiState.currentScreen != NexaScreen.CHAT) {
+                            ModelLabBottomNav(
+                                currentScreen = uiState.currentScreen,
+                                onSelectScreen = { viewModel.setScreen(it) }
+                            )
+                        }
                     }
                 ) { innerPadding ->
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(bottom = innerPadding.calculateBottomPadding())
+                            .padding(bottom = if (uiState.currentScreen != NexaScreen.CHAT) innerPadding.calculateBottomPadding() else 0.dp)
                     ) {
                         AnimatedContent(
                             targetState = uiState.currentScreen,
