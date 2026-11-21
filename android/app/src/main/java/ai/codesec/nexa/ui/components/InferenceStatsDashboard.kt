@@ -263,16 +263,21 @@ fun InferenceStatsDashboard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val backendDesc = if (uiState.preferredBackend == BackendType.VULKAN) {
-                        "Backend: Qualcomm Adreno Vulkan (Exp)"
-                    } else {
-                        "Backend: ARM64 NEON Vector Engine"
+                    val backendDesc = when (uiState.preferredBackend) {
+                        BackendType.VULKAN -> "Backend: Qualcomm Adreno Vulkan (Exp)"
+                        BackendType.OPENCL -> "Backend: Qualcomm Adreno OpenCL 3.0"
+                        else -> "Backend: ARM64 NEON Vector Engine"
+                    }
+                    val backendColor = when (uiState.preferredBackend) {
+                        BackendType.VULKAN -> Color(0xFFF59E0B)
+                        BackendType.OPENCL -> CyberLime
+                        else -> Color(0xFF6B7280)
                     }
                     Text(
                         text = backendDesc,
                         fontSize = 9.sp,
                         fontFamily = FontFamily.Monospace,
-                        color = if (uiState.preferredBackend == BackendType.VULKAN) Color(0xFFF59E0B) else Color(0xFF6B7280)
+                        color = backendColor
                     )
                     Text(
                         text = "75% compress",

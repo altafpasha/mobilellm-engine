@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.outlined.FileDownload
@@ -96,6 +97,7 @@ import ai.codesec.nexa.ui.components.RuntimeInfoBottomSheet
 import ai.codesec.nexa.ui.theme.BrandCoral
 import ai.codesec.nexa.ui.theme.BrandCoralContainer
 import ai.codesec.nexa.ui.theme.ColdBlue
+import ai.codesec.nexa.ui.theme.CyberLime
 import ai.codesec.nexa.ui.theme.MintSuccess
 import ai.codesec.nexa.ui.theme.StatsBlue
 import ai.codesec.nexa.ui.theme.StudioBackground
@@ -153,6 +155,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 isModelLoaded = uiState.isModelLoaded,
                 onBack = { /* Optional activity back or navigate */ },
                 onOpenModelSelector = { viewModel.setModelSelectorOpen(true) },
+                onOpenDashboard = { viewModel.setScreen(NexaScreen.DASHBOARD) },
                 onOpenSettings = { viewModel.setInferenceSettingsOpen(true) },
                 onOpenHistory = { viewModel.setChatHistoryOpen(true) }
             )
@@ -255,6 +258,9 @@ fun ChatScreen(viewModel: ChatViewModel) {
             initialBackend = uiState.preferredBackend,
             initialThreads = uiState.threadCount,
             initialGpuLayers = uiState.gpuLayers,
+            openclResult = uiState.openclResult,
+            isOpenclBenchmarking = uiState.isOpenclBenchmarking,
+            onRunOpenCLBenchmark = { viewModel.runOpenCLBenchmark() },
             onSave = { params, backend, threads, layers ->
                 viewModel.updateSettings(params, backend, threads, layers)
             },
@@ -362,6 +368,7 @@ private fun TopChatNavigationBar(
     isModelLoaded: Boolean,
     onBack: () -> Unit,
     onOpenModelSelector: () -> Unit,
+    onOpenDashboard: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenHistory: () -> Unit
 ) {
@@ -461,11 +468,23 @@ private fun TopChatNavigationBar(
                     }
                 }
 
-                // Right action icons: Settings (Tune) & History
+                // Right action icons: Telemetry/Benchmarks, Settings (Tune) & History
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
+                    IconButton(
+                        onClick = onOpenDashboard,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Speed,
+                            contentDescription = "Model Lab Telemetry & Benchmarks",
+                            tint = CyberLime,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
                     IconButton(
                         onClick = onOpenSettings,
                         modifier = Modifier.size(36.dp)

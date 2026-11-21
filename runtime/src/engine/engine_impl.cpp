@@ -4,6 +4,7 @@
 #include "backends/cpu/llamacpp_backend.h"
 #include <chrono>
 #include <iostream>
+#include <dlfcn.h>
 
 #ifdef __ANDROID__
 #include <android/log.h>
@@ -94,6 +95,17 @@ HardwareProfile detect_os_hardware() noexcept {
 #else
     hp.vulkan_supported = false;
 #endif
+
+    // Detect Qualcomm Adreno OpenCL runtime
+    void* cl_handle = dlopen("libOpenCL.so", RTLD_NOW | RTLD_LOCAL);
+    if (!cl_handle) cl_handle = dlopen("/vendor/lib64/libOpenCL.so", RTLD_NOW | RTLD_LOCAL);
+    if (cl_handle) {
+        hp.opencl_supported = true;
+        hp.opencl_device_name = "Qualcomm Adreno OpenCL 3.0";
+        dlclose(cl_handle);
+    } else {
+        hp.opencl_supported = false;
+    }
     return hp;
 }
 

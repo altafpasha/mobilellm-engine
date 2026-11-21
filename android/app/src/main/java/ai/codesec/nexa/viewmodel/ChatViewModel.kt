@@ -276,7 +276,9 @@ data class ChatUiState(
     val conversations: List<Conversation> = emptyList(),
     val activeConversationId: String? = null,
     val activeDownloads: Map<String, DownloadItem> = emptyMap(),
-    val discoverCatalog: List<DiscoverModelItem> = DEFAULT_DISCOVER_CATALOG
+    val discoverCatalog: List<DiscoverModelItem> = DEFAULT_DISCOVER_CATALOG,
+    val openclResult: MobileLLMClient.OpenCLDiagnosticResult? = null,
+    val isOpenclBenchmarking: Boolean = false
 )
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
@@ -825,6 +827,24 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 isBenchmarking = false,
                 errorMessage = "Benchmark cancelled by user."
             )
+        }
+    }
+
+    /**
+     * Agent 12B: Qualcomm Adreno OpenCL Hardware Benchmark & GEMV Verification.
+     * Runs 128-bit coalesced FP16 GEMV kernel directly on Adreno GPU via dynamic libOpenCL.so.
+     */
+    fun runOpenCLBenchmark() {
+        if (_uiState.value.isOpenclBenchmarking) return
+        viewModelScope.launch(Dispatchers.Default) {
+            _uiState.update { it.copy(isOpenclBenchmarking = true) }
+            val result = client.runOpenCLDiagnostic()
+            _uiState.update {
+                it.copy(
+                    isOpenclBenchmarking = false,
+                    openclResult = result
+                )
+            }
         }
     }
 

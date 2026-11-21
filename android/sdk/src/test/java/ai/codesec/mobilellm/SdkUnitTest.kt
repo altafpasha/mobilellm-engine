@@ -18,6 +18,7 @@ class SdkUnitTest {
         assertThat(BackendType.CPU_NEON.code).isEqualTo(1)
         assertThat(BackendType.VULKAN.code).isEqualTo(2)
         assertThat(BackendType.VENDOR_NPU.code).isEqualTo(3)
+        assertThat(BackendType.OPENCL.code).isEqualTo(4)
     }
 
     @Test

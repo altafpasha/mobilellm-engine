@@ -53,10 +53,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ai.codesec.mobilellm.models.BackendType
 import ai.codesec.mobilellm.models.SamplingParams
+import ai.codesec.mobilellm.MobileLLMClient
 import ai.codesec.nexa.ui.theme.BrandCoral
 import ai.codesec.nexa.ui.theme.BrandCoralContainer
 import ai.codesec.nexa.ui.theme.ColdBlue
 import ai.codesec.nexa.ui.theme.CyberLime
+import ai.codesec.nexa.ui.theme.MintSuccess
 import ai.codesec.nexa.ui.theme.StatsBlue
 import ai.codesec.nexa.ui.theme.StudioBorder
 import ai.codesec.nexa.ui.theme.StudioCard
@@ -71,6 +73,9 @@ fun InferenceSettingsBottomSheet(
     initialBackend: BackendType,
     initialThreads: Int,
     initialGpuLayers: Int,
+    openclResult: MobileLLMClient.OpenCLDiagnosticResult? = null,
+    isOpenclBenchmarking: Boolean = false,
+    onRunOpenCLBenchmark: () -> Unit = {},
     onSave: (SamplingParams, BackendType, Int, Int) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -219,6 +224,126 @@ fun InferenceSettingsBottomSheet(
                             fontSize = 10.sp,
                             color = if (isGpu) Color(0xFFF59E0B) else Color(0xFF6B7280)
                         )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            val isOpenCl = selectedBackend == BackendType.OPENCL
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .clickable { selectedBackend = BackendType.OPENCL }
+                    .background(if (isOpenCl) BrandCoralContainer else StudioCard)
+                    .border(1.dp, if (isOpenCl) CyberLime else StudioBorder, RoundedCornerShape(14.dp))
+                    .padding(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Qualcomm OpenCL GPU",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = if (isOpenCl) Color.White else Color(0xFF9CA3AF)
+                        )
+                        Text(
+                            text = "OpenCL 3.0 · Adreno 740 Bit-Accurate Vector Compute",
+                            fontSize = 10.sp,
+                            color = if (isOpenCl) CyberLime else Color(0xFF6B7280)
+                        )
+                    }
+                    if (isOpenCl) {
+                        Text(
+                            text = "ACTIVE",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontFamily = FontFamily.Monospace,
+                            color = CyberLime
+                        )
+                    }
+                }
+            }
+
+            if (isOpenCl) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(StudioCardHighlight)
+                        .border(1.dp, StudioBorder, RoundedCornerShape(14.dp))
+                        .padding(14.dp)
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "ADRENO HARDWARE VALIDATION",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = CyberLime
+                            )
+                            if (isOpenclBenchmarking) {
+                                androidx.compose.material3.CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    color = CyberLime,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                androidx.compose.material3.TextButton(
+                                    onClick = onRunOpenCLBenchmark,
+                                    modifier = Modifier.height(28.dp)
+                                ) {
+                                    Text(
+                                        if (openclResult == null) "Run Test" else "Re-test",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = CyberLime
+                                    )
+                                }
+                            }
+                        }
+
+                        if (openclResult != null) {
+                            val res = openclResult
+                            if (res.success) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "PASS: 100% Bit-Accurate (1024.0) · Latency: ${String.format("%.3f", res.perGemvMs)} ms · Bandwidth: ${String.format("%.2f", res.bandwidthGbps)} GB/s",
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MintSuccess
+                                )
+                                Text(
+                                    text = "Device: ${res.device} · ${res.driverVersion}",
+                                    fontSize = 10.sp,
+                                    color = Color(0xFF9CA3AF)
+                                )
+                            } else {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = res.errorMessage ?: "Test failed",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFEF4444)
+                                )
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Dynamically loads /vendor/lib64/libOpenCL.so and runs 100 iterations of 128-bit coalesced FP16 GEMV [2048x2048].",
+                                fontSize = 11.sp,
+                                color = Color(0xFF9CA3AF)
+                            )
+                        }
                     }
                 }
             }

@@ -470,6 +470,8 @@ mllm_status_t mllm_detect_hardware(char* json_buffer, size_t max_len) {
          << ",\"neon\":" << (hp.neon_supported ? "true" : "false")
          << ",\"vulkan\":" << (hp.vulkan_supported ? "true" : "false")
          << ",\"vulkan_device\":\"" << json_escape(hp.vulkan_device_name) << "\""
+         << ",\"opencl\":" << (hp.opencl_supported ? "true" : "false")
+         << ",\"opencl_device\":\"" << json_escape(hp.opencl_device_name) << "\""
          << ",\"npu\":" << (hp.npu_supported ? "true" : "false")
          << ",\"cpu_cores\":" << hp.cpu_core_count
          << ",\"total_ram_mb\":" << total_ram_mb

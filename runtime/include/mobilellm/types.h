@@ -88,7 +88,8 @@ enum class BackendType : int32_t {
     AUTO = 0,
     CPU_NEON = 1,
     VULKAN = 2,
-    VENDOR_NPU = 3
+    VENDOR_NPU = 3,
+    OPENCL = 4
 };
 
 /**
@@ -293,6 +294,8 @@ struct HardwareProfile {
     bool neon_supported{false};
     bool vulkan_supported{false};
     std::string vulkan_device_name;
+    bool opencl_supported{false};
+    std::string opencl_device_name;
     bool npu_supported{false};
 };
 

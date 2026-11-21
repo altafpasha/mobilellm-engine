@@ -24,7 +24,13 @@ enum class BackendType(val code: Int) {
     /**
      * Experimental vendor NPU integration (Qualcomm QNN / Android NNAPI).
      */
-    VENDOR_NPU(3);
+    VENDOR_NPU(3),
+
+    /**
+     * Qualcomm Adreno OpenCL GPU compute backend.
+     * High performance, bit-accurate FP16/dot product compute on Snapdragon devices.
+     */
+    OPENCL(4);
 
     companion object {
         fun fromCode(code: Int): BackendType =

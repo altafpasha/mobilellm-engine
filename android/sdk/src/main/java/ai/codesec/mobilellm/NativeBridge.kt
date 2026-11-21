@@ -103,5 +103,8 @@ internal object NativeBridge {
 
     @JvmStatic
     external fun nativeSetSessionThreads(engineHandle: Long, sessionHandle: Long, nThreads: Int): Boolean
+
+    @JvmStatic
+    external fun nativeRunOpenCLDiagnostic(): String
 }
 

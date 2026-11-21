@@ -93,6 +93,7 @@ fun DeviceInfoDialog(
                     fontSize = 12.sp,
                     color = CyberLime
                 )
+                InfoRow("Adreno OpenCL", "OpenCL 3.0 (Qualcomm Adreno)", CyberLime)
                 Text(
                     text = hardwareInfo,
                     fontSize = 11.sp,

@@ -272,6 +272,76 @@ class MobileLLMClient private constructor() : Closeable {
     }
 
     /**
+     * Qualcomm Adreno OpenCL GPU compute diagnostic & GEMV benchmark results.
+     */
+    data class OpenCLDiagnosticResult(
+        val success: Boolean,
+        val platform: String,
+        val device: String,
+        val openclVersion: String,
+        val driverVersion: String,
+        val computeUnits: Int,
+        val maxClockMhz: Int,
+        val fp16Supported: Boolean,
+        val dotProductSupported: Boolean,
+        val subgroupShuffleSupported: Boolean,
+        val mathVerification: String,
+        val perGemvMs: Double,
+        val bandwidthGbps: Double,
+        val projectedTokPerSec: Double,
+        val rawReport: String,
+        val errorMessage: String? = null
+    )
+
+    /**
+     * Runs an on-device Qualcomm Adreno OpenCL hardware verification and GEMV benchmark.
+     */
+    suspend fun runOpenCLDiagnostic(): OpenCLDiagnosticResult = withContext(Dispatchers.IO) {
+        try {
+            val jsonStr = NativeBridge.nativeRunOpenCLDiagnostic()
+            val obj = JSONObject(jsonStr)
+            val success = obj.optBoolean("success", false)
+            OpenCLDiagnosticResult(
+                success = success,
+                platform = obj.optString("platform", "Unknown"),
+                device = obj.optString("device", "Qualcomm Adreno"),
+                openclVersion = obj.optString("opencl_version", "OpenCL 3.0"),
+                driverVersion = obj.optString("driver_version", "Unknown"),
+                computeUnits = obj.optInt("compute_units", 0),
+                maxClockMhz = obj.optInt("max_clock_mhz", 0),
+                fp16Supported = obj.optBoolean("fp16_supported", false),
+                dotProductSupported = obj.optBoolean("dot_product_supported", false),
+                subgroupShuffleSupported = obj.optBoolean("subgroup_shuffle_supported", false),
+                mathVerification = obj.optString("math_verification", if (success) "PASS" else "FAIL"),
+                perGemvMs = obj.optDouble("per_gemv_ms", 0.0),
+                bandwidthGbps = obj.optDouble("bandwidth_gbps", 0.0),
+                projectedTokPerSec = obj.optDouble("projected_tok_s", 0.0),
+                rawReport = obj.optString("raw_report", ""),
+                errorMessage = if (success) null else obj.optString("error", "Diagnostic failed")
+            )
+        } catch (e: Throwable) {
+            OpenCLDiagnosticResult(
+                success = false,
+                platform = "Unknown",
+                device = "Adreno",
+                openclVersion = "N/A",
+                driverVersion = "N/A",
+                computeUnits = 0,
+                maxClockMhz = 0,
+                fp16Supported = false,
+                dotProductSupported = false,
+                subgroupShuffleSupported = false,
+                mathVerification = "FAIL: ${e.message}",
+                perGemvMs = 0.0,
+                bandwidthGbps = 0.0,
+                projectedTokPerSec = 0.0,
+                rawReport = e.stackTraceToString(),
+                errorMessage = e.message
+            )
+        }
+    }
+
+    /**
      * Queries process memory telemetry (RSS, Peak RSS, VmSize, Model & KV bytes).
      */
     fun getProcessMemory(): ProcessMemorySnapshot {
