@@ -30,6 +30,8 @@ android {
                     "-DGGML_OPENMP=OFF",
                     "-DGGML_VULKAN=ON",
                     "-DMOBILELLM_ENABLE_VULKAN=ON",
+                    "-DMOBILELLM_ENABLE_RUST=OFF",
+                    "-DGGML_VULKAN_ALLOW_QUALCOMM_MUL_MAT_VEC=ON",
                     "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
                 )
             }

@@ -16,6 +16,7 @@ if (EXISTS "${MOBILELLM_ROOT_DIR}/third_party/llama.cpp/CMakeLists.txt")
     set(LLAMA_BUILD_SERVER OFF CACHE BOOL "Build llama.cpp server" FORCE)
     set(GGML_OPENMP OFF CACHE BOOL "ggml: disable OpenMP on Android" FORCE)
     set(GGML_VULKAN ON CACHE BOOL "ggml: enable Vulkan on Android" FORCE)
+    add_compile_definitions(GGML_VULKAN_ALLOW_QUALCOMM_MUL_MAT_VEC)
     add_subdirectory(${MOBILELLM_ROOT_DIR}/third_party/llama.cpp ${CMAKE_CURRENT_BINARY_DIR}/llama_build EXCLUDE_FROM_ALL)
 endif()
 
@@ -24,18 +25,19 @@ find_package(Vulkan REQUIRED)
 
 # Build scheduler and static core runtime libraries
 add_subdirectory(${MOBILELLM_ROOT_DIR}/scheduler ${CMAKE_CURRENT_BINARY_DIR}/scheduler_build)
-add_subdirectory(${MOBILELLM_ROOT_DIR}/runtime ${CMAKE_CURRENT_BINARY_DIR}/runtime_build)
-
-# JNI Bridge shared library
-add_library(mobilellm_jni SHARED
-    mobilellm_jni.cpp
-)
 
 option(MOBILELLM_ENABLE_RUST "Enable optional Rust components" OFF)
 if (MOBILELLM_ENABLE_RUST)
     message(STATUS "MobileLLM Android: Enabling optional Rust components")
     add_subdirectory(${MOBILELLM_ROOT_DIR}/rust ${CMAKE_CURRENT_BINARY_DIR}/rust_build)
 endif()
+
+add_subdirectory(${MOBILELLM_ROOT_DIR}/runtime ${CMAKE_CURRENT_BINARY_DIR}/runtime_build)
+
+# JNI Bridge shared library
+add_library(mobilellm_jni SHARED
+    mobilellm_jni.cpp
+)
 
 target_include_directories(mobilellm_jni PRIVATE
     ${MOBILELLM_ROOT_DIR}/runtime/include

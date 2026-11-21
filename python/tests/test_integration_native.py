@@ -105,4 +105,3 @@ def test_native_session_reset_and_logits(check_environment: None) -> None:
 
             tokens2 = list(session.generate("Hello", SamplingParams(max_tokens=2)))
             assert len(tokens2) > 0
-

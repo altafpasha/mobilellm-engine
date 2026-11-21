@@ -2,6 +2,8 @@
 Direct C-ABI FFI wrapper linking libmobilellm dynamic library using ctypes.
 """
 
+from __future__ import annotations
+
 import ctypes
 import os
 import queue
@@ -302,7 +304,11 @@ class NativeSession:
             c_uint64(self._session_handle),
         )
         if status.code != 0:
-            msg = status.message.decode("utf-8", errors="replace") if status.message else "mllm_session_reset failed"
+            msg = (
+                status.message.decode("utf-8", errors="replace")
+                if status.message
+                else "mllm_session_reset failed"
+            )
             raise map_error_code(status.code, msg) or MobileLLMError(msg, status.code)
 
     def get_last_logits(self) -> list[float]:
@@ -320,7 +326,11 @@ class NativeSession:
             ctypes.byref(vocab_size),
         )
         if status.code != 0:
-            msg = status.message.decode("utf-8", errors="replace") if status.message else "mllm_get_last_logits failed"
+            msg = (
+                status.message.decode("utf-8", errors="replace")
+                if status.message
+                else "mllm_get_last_logits failed"
+            )
             raise map_error_code(status.code, msg) or MobileLLMError(msg, status.code)
         if vocab_size.value == 0:
             return []
@@ -334,9 +344,13 @@ class NativeSession:
             ctypes.byref(out_len),
         )
         if status.code != 0:
-            msg = status.message.decode("utf-8", errors="replace") if status.message else "mllm_get_last_logits failed"
+            msg = (
+                status.message.decode("utf-8", errors="replace")
+                if status.message
+                else "mllm_get_last_logits failed"
+            )
             raise map_error_code(status.code, msg) or MobileLLMError(msg, status.code)
-        return list(buf[:out_len.value])
+        return list(buf[: out_len.value])
 
     def close(self) -> None:
         """Destroys the native session context."""
@@ -573,7 +587,11 @@ class NativeClient:
             c_uint64(session_handle),
         )
         if status.code != 0:
-            msg = status.message.decode("utf-8", errors="replace") if status.message else "mllm_session_reset failed"
+            msg = (
+                status.message.decode("utf-8", errors="replace")
+                if status.message
+                else "mllm_session_reset failed"
+            )
             raise map_error_code(status.code, msg) or MobileLLMError(msg, status.code)
 
     def close(self) -> None:

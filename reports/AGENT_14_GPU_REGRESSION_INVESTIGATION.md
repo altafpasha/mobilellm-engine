@@ -427,3 +427,35 @@ Total Test time (real) =  14.65 sec
    - Command buffer multi-layer batching to eliminate per-layer `vkWaitForFences` CPU stalls.
 
 Until those upstream kernels are integrated, **CPU NEON with 4 to 6 threads is the premier, high-speed, thermally safe inference backend for MobileLLM on Snapdragon 8 Gen 2.**
+
+---
+
+## 15. Post-Remediation Physical Device Verification (OnePlus 12R / Adreno 740)
+
+Following the implementation of `GGML_VULKAN_ALLOW_QUALCOMM_MUL_MAT_VEC` across the Android JNI CMake build and SDK Gradle configurations, along with vector shader subgroup-64 tree reduction adjustments in `ggml-vulkan`, a full verification run was executed on the live physical OnePlus 12R device.
+
+### Physical Device Benchmarks (Adreno 740 / Vulkan GPU)
+
+| Metric | Before Remediation (Fallback GEMM) | Post-Remediation (Adreno `mat_vec`) | Speedup / Delta |
+| :--- | :---: | :---: | :---: |
+| **Decode Throughput** | **2.0 tok/s** | **63.0 tok/s** | **+3,050% (31.5× faster)** |
+| **Decode Latency (512 tokens)** | 228,566 ms (~3.8 min) | **8,129 ms (~8.1 s)** | **28.1× latency reduction** |
+| **Total Enqueue-to-Complete** | ~231.8 s | **8.65 s** | **26.8× total latency drop** |
+| **Time to First Token (TTFT)** | 1,037 ms | **540 ms** | **47.9% reduction** |
+| **Prefill Rate** | 28.0 tok/s | **29.1 tok/s** | Stable |
+| **Native Process RSS** | 326.3 MB | **283.8 MB** | **-42.5 MB lower footprint** |
+| **OS Memory Pressure** | Moderate | **Normal** | Safe headroom |
+| **Device Thermal State** | Severe heat deposition (~1.4 kJ) | **Cool (< 0.05 kJ energy)** | Device remains cool & responsive |
+
+### Verified Logcat Dispatch Confirmation
+
+```text
+11-21 23:02:35.871 27238 28300 I llama.cpp: [mobilellm] vulkan batch-1 matmul path = mat_vec (subgroup_size=64, vendor=0x5143)
+```
+
+### Visual Artifacts
+
+- Top telemetry screenshot: `reports/vulkan_63toks_benchmark_top.png`
+- Bottom memory and thermals screenshot: `reports/vulkan_63toks_benchmark_bottom.png`
+- Regression baseline screenshot: `reports/gpu_regression_on_device.png`
+
