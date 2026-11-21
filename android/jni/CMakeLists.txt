@@ -16,7 +16,6 @@ if (EXISTS "${MOBILELLM_ROOT_DIR}/third_party/llama.cpp/CMakeLists.txt")
     set(LLAMA_BUILD_SERVER OFF CACHE BOOL "Build llama.cpp server" FORCE)
     set(GGML_OPENMP OFF CACHE BOOL "ggml: disable OpenMP on Android" FORCE)
     set(GGML_VULKAN ON CACHE BOOL "ggml: enable Vulkan on Android" FORCE)
-    add_compile_definitions(GGML_VULKAN_ALLOW_QUALCOMM_MUL_MAT_VEC)
     add_subdirectory(${MOBILELLM_ROOT_DIR}/third_party/llama.cpp ${CMAKE_CURRENT_BINARY_DIR}/llama_build EXCLUDE_FROM_ALL)
 endif()
 

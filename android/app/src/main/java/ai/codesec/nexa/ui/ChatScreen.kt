@@ -496,10 +496,10 @@ private fun BackendSelectorCard(
                     color = Color.White
                 )
                 Text(
-                    text = if (currentBackend == BackendType.VULKAN) "Adreno 750 (64-wide Wavefront)" else "ARM64 NEON Vector Engine",
+                    text = if (currentBackend == BackendType.VULKAN) "Adreno Vulkan (Experimental)" else "ARM64 NEON Vector Engine (Coherent)",
                     fontSize = 10.sp,
                     fontFamily = FontFamily.Monospace,
-                    color = Color(0xFF869690)
+                    color = if (currentBackend == BackendType.VULKAN) Color(0xFFE5A93C) else Color(0xFF869690)
                 )
             }
 

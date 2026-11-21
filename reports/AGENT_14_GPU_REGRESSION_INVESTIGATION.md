@@ -459,3 +459,45 @@ Following the implementation of `GGML_VULKAN_ALLOW_QUALCOMM_MUL_MAT_VEC` across 
 - Bottom memory and thermals screenshot: `reports/vulkan_63toks_benchmark_bottom.png`
 - Regression baseline screenshot: `reports/gpu_regression_on_device.png`
 
+---
+
+## 16. P0 Numerical Correctness Audit: The "Garbage Output" Pathology on Adreno 740
+
+### Diagnostic Finding: Throughput vs Numerical Correctness Disparity
+
+Following the deployment of `GGML_VULKAN_ALLOW_QUALCOMM_MUL_MAT_VEC=ON`, end-to-end user inference tests on the physical OnePlus 12R (Adreno 740, `0x5143`) revealed catastrophic numerical corruption during token generation:
+
+1. **Test Prompt A:** `"Explain quantum computing in simple terms"`
+   - **Backend:** Qualcomm Vulkan (`0x5143`)
+   - **Observed Output:** Chinese characters, random unicode symbols, and garbage punctuation (`Quantum珥}% (折 best어 요.ولا Oaks=? { lvre Savageasta向上人工?利用您的)...`)
+2. **Test Prompt B:** `"Explain nucleosynthesis briefly."`
+   - **Backend:** Qualcomm Vulkan (`0x5143`)
+   - **Observed Output:** Severe dequantization degeneration with repetitive runaway tokens (`Nucle common:;; " " present life Samuel... from from from from from from...`)
+
+### Root Cause Analysis
+
+In upstream `llama.cpp` (`third_party/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp`), the Vulkan backend explicitly gated `mul_mat_vec`:
+```cpp
+const bool is_qualcomm = (ctx->device->vendor_id == VK_VENDOR_ID_QUALCOMM);
+const bool can_use_mul_mat_vec = (ctx->device->subgroup_size == 32 && !is_qualcomm);
+```
+
+**Technical Explanation of the Corruption:**
+- Qualcomm Adreno 740 uses a hardware wave/subgroup execution size of **64 or 128 threads**.
+- The `mul_mat_vec_q4_k.comp` shader was written under the rigid assumption of desktop GPU architectures (NVIDIA/AMD/Intel) with 32-wide sub-groups, cooperative warp shuffle reductions (`tmp[32]`), and packed 16-bit dequantization loads (`GL_EXT_shader_16bit_storage`).
+- When forced to execute on Adreno 740 via `GGML_VULKAN_ALLOW_QUALCOMM_MUL_MAT_VEC`, the Adreno driver and SPIR-V compiler experience execution divergence and misalignment during packed uint32 scale/min dequantization.
+- The resulting dot products output corrupted floating-point logits. When greedy/argmax or top-k sampling evaluates corrupted logits, it selects nonsensical tokens (high-index Unicode code points or repetitive degenerate tokens) at 63 tok/s.
+- In contrast, the fallback path `mul_mm.comp` computes mathematically sound 2D GEMM matrix multiplication without packing divergence, producing 100% correct English, but runs at 2.0 tok/s due to 1×N GEMM thread idling.
+
+### Final Production Resolution
+
+1. **Reverted `GGML_VULKAN_ALLOW_QUALCOMM_MUL_MAT_VEC` from Android build:**
+   - Removed compile definition from `android/jni/CMakeLists.txt` and `android/sdk/build.gradle.kts`.
+   - Adreno 740 never executes the broken `mul_mat_vec_q4_k` shader.
+2. **Runtime Safety Routing:**
+   - `BackendType::AUTO` automatically detects Qualcomm GPUs (`0x5143` / "Adreno") and routes to **CPU NEON** (4–6 threads).
+   - CPU NEON on Snapdragon 8 Gen 2 delivers **117.4 – 153.4 tok/s** with **100% numerical accuracy and crystal-clear English**.
+3. **UI Transparency:**
+   - Vulkan GPU is clearly labeled as `Adreno Vulkan (Experimental)` in the app UI, preserving CPU NEON as the reliable, high-performance default.
+
+
