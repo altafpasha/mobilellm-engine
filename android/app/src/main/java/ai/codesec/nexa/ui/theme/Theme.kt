@@ -13,11 +13,27 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 // Obsidian Cyber-Lime Studio Palette
-val ObsidianBackground = Color(0xFF0D1110)
-val ObsidianSurface = Color(0xFF131816)
-val ObsidianCard = Color(0xFF1A211E)
-val ObsidianCardHighlight = Color(0xFF222C28)
-val ObsidianBorder = Color(0xFF28342F)
+val ObsidianBackground = Color(0xFF0E0F10)
+val ObsidianSurface = Color(0xFF16181A)
+val ObsidianCard = Color(0xFF1E2023)
+val ObsidianCardHighlight = Color(0xFF26292D)
+val ObsidianBorder = Color(0xFF2C3035)
+
+// Modern AI Chat Studio Palette (matching reference screenshot)
+val BrandCoral = Color(0xFFE05345)
+val BrandCoralDark = Color(0xFFB83A2E)
+val BrandCoralGlow = Color(0x33E05345)
+val BrandCoralContainer = Color(0xFF2B1816)
+
+val StudioBackground = Color(0xFF0E0F10)
+val StudioSurface = Color(0xFF16181A)
+val StudioCard = Color(0xFF1E2023)
+val StudioCardHighlight = Color(0xFF26292D)
+val StudioBorder = Color(0xFF2C3035)
+
+val StatsBlue = Color(0xFF0284C7)
+val StatsBlueGlow = Color(0x330284C7)
+val StatsBlueContainer = Color(0xFF0E2536)
 
 val CyberLime = Color(0xFFA3E635)
 val CyberLimeDark = Color(0xFF65A30D)
@@ -30,23 +46,23 @@ val MintSuccess = Color(0xFF4ADE80)
 val CrimsonError = Color(0xFFF87171)
 
 private val DarkColorScheme = darkColorScheme(
-    primary = CyberLime,
-    onPrimary = Color(0xFF0D1110),
-    primaryContainer = CyberLimeContainer,
-    onPrimaryContainer = CyberLime,
-    secondary = ColdBlue,
-    onSecondary = Color(0xFF0D1110),
-    secondaryContainer = ColdBlueContainer,
-    onSecondaryContainer = ColdBlue,
+    primary = BrandCoral,
+    onPrimary = Color.White,
+    primaryContainer = BrandCoralContainer,
+    onPrimaryContainer = BrandCoral,
+    secondary = StatsBlue,
+    onSecondary = Color.White,
+    secondaryContainer = StatsBlueContainer,
+    onSecondaryContainer = StatsBlue,
     tertiary = MintSuccess,
-    background = ObsidianBackground,
-    onBackground = Color(0xFFF1F5F3),
-    surface = ObsidianSurface,
-    onSurface = Color(0xFFF1F5F3),
-    surfaceVariant = ObsidianCard,
-    onSurfaceVariant = Color(0xFF94A39D),
-    outline = ObsidianBorder,
-    outlineVariant = Color(0xFF1E2623),
+    background = StudioBackground,
+    onBackground = Color(0xFFF3F4F6),
+    surface = StudioSurface,
+    onSurface = Color(0xFFF3F4F6),
+    surfaceVariant = StudioCard,
+    onSurfaceVariant = Color(0xFF9CA3AF),
+    outline = StudioBorder,
+    outlineVariant = Color(0xFF222528),
     error = CrimsonError
 )
 
