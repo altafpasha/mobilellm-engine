@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -64,36 +67,56 @@ fun ModelSelectorBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = StudioSurface,
-        dragHandle = null,
+        dragHandle = {
+            BottomSheetDefaults.DragHandle(
+                color = Color(0xFF4B5563),
+                height = 4.dp,
+                width = 36.dp
+            )
+        },
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 18.dp)
+                .statusBarsPadding()
                 .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 6.dp)
         ) {
             // Header
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 12.dp)
+                ) {
                     Text(
                         text = "Select AI Model",
-                        fontSize = 18.sp,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = "Instant zero-copy model switching",
-                        fontSize = 12.sp,
-                        color = Color(0xFF9CA3AF)
+                        fontSize = 11.sp,
+                        color = Color(0xFF9CA3AF),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
@@ -122,26 +145,26 @@ fun ModelSelectorBottomSheet(
                         }
                     }
 
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    IconButton(
-                        onClick = onDismiss,
+                    Box(
                         modifier = Modifier
-                            .size(32.dp)
-                            .background(StudioCard, CircleShape)
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(StudioCard)
                             .border(1.dp, StudioBorder, CircleShape)
+                            .clickable(onClick = onDismiss),
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Close",
                             tint = Color.White,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             if (uiState.availableModels.isEmpty()) {
                 Box(

@@ -2,6 +2,10 @@ package ai.codesec.nexa.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -80,54 +84,73 @@ fun ModelDetailsBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = StudioSurface,
-        dragHandle = null,
+        dragHandle = {
+            BottomSheetDefaults.DragHandle(
+                color = Color(0xFF4B5563),
+                height = 4.dp,
+                width = 36.dp
+            )
+        },
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 18.dp)
+                .statusBarsPadding()
                 .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 6.dp)
                 .verticalScroll(rememberScrollState())
         ) {
             // Header
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 12.dp)
+                ) {
                     Text(
                         text = name,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = "$arch · $params parameters · $quant",
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,
-                        color = BrandCoral
+                        color = BrandCoral,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
-                IconButton(
-                    onClick = onDismiss,
+                Box(
                     modifier = Modifier
-                        .size(32.dp)
-                        .background(StudioCard, CircleShape)
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(StudioCard)
                         .border(1.dp, StudioBorder, CircleShape)
+                        .clickable(onClick = onDismiss),
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Close",
                         tint = Color.White,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Specs grid
             Column(
