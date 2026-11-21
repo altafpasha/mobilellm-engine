@@ -24,6 +24,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -365,7 +367,9 @@ private fun TopChatNavigationBar(
 ) {
     Surface(
         color = StudioBackground,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
     ) {
         Column(
             modifier = Modifier
@@ -390,8 +394,13 @@ private fun TopChatNavigationBar(
                     )
                 }
 
-                // Center Title & Model Selector Pill
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                // Center Title & Model Selector Pill (Responsive, flexible)
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     // Title: Icon + AI Chat in Coral
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
@@ -421,7 +430,10 @@ private fun TopChatNavigationBar(
                             .border(1.dp, StudioBorder, RoundedCornerShape(16.dp))
                             .padding(horizontal = 10.dp, vertical = 4.dp)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 2.dp)
+                        ) {
                             Icon(
                                 imageVector = Icons.Outlined.FileDownload,
                                 contentDescription = null,
@@ -434,7 +446,9 @@ private fun TopChatNavigationBar(
                                 fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color.White
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Spacer(modifier = Modifier.width(3.dp))
                             Icon(
@@ -448,7 +462,10 @@ private fun TopChatNavigationBar(
                 }
 
                 // Right action icons: Settings (Tune) & History
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
                     IconButton(
                         onClick = onOpenSettings,
                         modifier = Modifier.size(36.dp)

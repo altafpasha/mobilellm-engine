@@ -1,5 +1,6 @@
 package ai.codesec.nexa.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,20 +14,23 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -44,6 +48,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ai.codesec.mobilellm.models.BackendType
@@ -86,81 +91,72 @@ fun InferenceSettingsBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = StudioSurface,
-        dragHandle = null,
+        dragHandle = {
+            BottomSheetDefaults.DragHandle(
+                color = Color(0xFF4B5563),
+                height = 4.dp,
+                width = 36.dp
+            )
+        },
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 18.dp)
+                .statusBarsPadding()
                 .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 6.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            // Header
+            // Header: Responsive title + dedicated non-overlapping Close (X) button
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 12.dp)
+                ) {
                     Text(
                         text = "Inference & Runtime Settings",
-                        fontSize = 18.sp,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = "Sampling parameters & hardware scheduling",
-                        fontSize = 12.sp,
-                        color = Color(0xFF9CA3AF)
+                        fontSize = 11.sp,
+                        color = Color(0xFF9CA3AF),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
-                        onClick = {
-                            temperature = 0.7f
-                            topP = 0.9f
-                            topK = 40
-                            repetitionPenalty = 1.1f
-                            maxTokens = 512
-                            selectedBackend = BackendType.CPU_NEON
-                            threads = 4
-                            gpuLayers = 28
-                        },
-                        modifier = Modifier
-                            .size(32.dp)
-                            .background(StudioCard, CircleShape)
-                            .border(1.dp, StudioBorder, CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.RestartAlt,
-                            contentDescription = "Reset",
-                            tint = Color(0xFF9CA3AF),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier
-                            .size(32.dp)
-                            .background(StudioCard, CircleShape)
-                            .border(1.dp, StudioBorder, CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close",
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(StudioCard)
+                        .border(1.dp, StudioBorder, CircleShape)
+                        .clickable(onClick = onDismiss),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             // Section 1: Hardware Compute Engine
             Text(
@@ -232,7 +228,8 @@ fun InferenceSettingsBottomSheet(
             // Thread count slider
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = "CPU Execution Threads",
@@ -263,7 +260,8 @@ fun InferenceSettingsBottomSheet(
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = "GPU Offload Layers",
@@ -348,37 +346,88 @@ fun InferenceSettingsBottomSheet(
                 range = 64f..2048f
             )
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // Save button
-            Button(
-                onClick = {
-                    val finalParams = initialParams.copy(
-                        temperature = temperature,
-                        topP = topP,
-                        topK = topK,
-                        repetitionPenalty = repetitionPenalty,
-                        maxTokens = maxTokens
-                    )
-                    val finalLayers = if (selectedBackend == BackendType.CPU_NEON) 0 else gpuLayers
-                    onSave(finalParams, selectedBackend, threads, finalLayers)
-                    onDismiss()
-                },
+            // Bottom Action Row: Clear Reset button + Apply Settings button without header collision
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
-                shape = RoundedCornerShape(14.dp)
+                    .padding(top = 4.dp, bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Apply Settings",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = Color.White
-                )
-            }
+                // Reset Defaults
+                OutlinedButton(
+                    onClick = {
+                        temperature = 0.7f
+                        topP = 0.9f
+                        topK = 40
+                        repetitionPenalty = 1.1f
+                        maxTokens = 512
+                        selectedBackend = BackendType.CPU_NEON
+                        threads = 4
+                        gpuLayers = 28
+                    },
+                    modifier = Modifier
+                        .weight(0.38f)
+                        .height(48.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = StudioCard,
+                        contentColor = Color(0xFFD1D5DB)
+                    ),
+                    border = BorderStroke(1.dp, StudioBorder)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.RestartAlt,
+                        contentDescription = "Reset Defaults",
+                        tint = Color(0xFF9CA3AF),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Reset",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        color = Color(0xFFD1D5DB)
+                    )
+                }
 
-            Spacer(modifier = Modifier.height(10.dp))
+                // Apply Settings
+                Button(
+                    onClick = {
+                        val finalParams = initialParams.copy(
+                            temperature = temperature,
+                            topP = topP,
+                            topK = topK,
+                            repetitionPenalty = repetitionPenalty,
+                            maxTokens = maxTokens
+                        )
+                        val finalLayers = if (selectedBackend == BackendType.CPU_NEON) 0 else gpuLayers
+                        onSave(finalParams, selectedBackend, threads, finalLayers)
+                        onDismiss()
+                    },
+                    modifier = Modifier
+                        .weight(0.62f)
+                        .height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Apply Settings",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = Color.White
+                    )
+                }
+            }
         }
     }
 }
@@ -394,7 +443,8 @@ private fun SettingSliderRow(
     Column(modifier = Modifier.padding(vertical = 4.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = label,
