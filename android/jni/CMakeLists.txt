@@ -24,18 +24,19 @@ find_package(Vulkan REQUIRED)
 
 # Build scheduler and static core runtime libraries
 add_subdirectory(${MOBILELLM_ROOT_DIR}/scheduler ${CMAKE_CURRENT_BINARY_DIR}/scheduler_build)
-add_subdirectory(${MOBILELLM_ROOT_DIR}/runtime ${CMAKE_CURRENT_BINARY_DIR}/runtime_build)
-
-# JNI Bridge shared library
-add_library(mobilellm_jni SHARED
-    mobilellm_jni.cpp
-)
 
 option(MOBILELLM_ENABLE_RUST "Enable optional Rust components" OFF)
 if (MOBILELLM_ENABLE_RUST)
     message(STATUS "MobileLLM Android: Enabling optional Rust components")
     add_subdirectory(${MOBILELLM_ROOT_DIR}/rust ${CMAKE_CURRENT_BINARY_DIR}/rust_build)
 endif()
+
+add_subdirectory(${MOBILELLM_ROOT_DIR}/runtime ${CMAKE_CURRENT_BINARY_DIR}/runtime_build)
+
+# JNI Bridge shared library
+add_library(mobilellm_jni SHARED
+    mobilellm_jni.cpp
+)
 
 target_include_directories(mobilellm_jni PRIVATE
     ${MOBILELLM_ROOT_DIR}/runtime/include

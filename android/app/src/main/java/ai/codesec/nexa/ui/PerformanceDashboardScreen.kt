@@ -497,8 +497,8 @@ fun PerformanceDashboardScreen(
                         else -> "Auto Backend"
                     }
                     val accelLabel = when (uiState.preferredBackend) {
-                        BackendType.VULKAN -> "Direct SPIR-V / mul_mat_vec"
-                        else -> "128-bit Vector SIMD"
+                        BackendType.VULKAN -> "Direct SPIR-V / mul_mm (Adreno Safe)"
+                        else -> "128-bit Vector SIMD (NEON)"
                     }
                     val gpuLayerLabel = if (uiState.gpuLayers >= 0) "${uiState.gpuLayers} / 28 Layers" else "Auto Offload"
 

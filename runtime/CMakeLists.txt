@@ -64,6 +64,19 @@ if (ANDROID)
     target_link_libraries(mobilellm_static PRIVATE log)
 endif()
 
+if (MOBILELLM_ENABLE_RUST)
+    target_compile_definitions(mobilellm PRIVATE MOBILELLM_ENABLE_RUST)
+    target_compile_definitions(mobilellm_static PRIVATE MOBILELLM_ENABLE_RUST)
+    target_link_libraries(mobilellm PRIVATE mobilellm_rust_ffi)
+    target_link_libraries(mobilellm_static PUBLIC mobilellm_rust_ffi)
+    target_include_directories(mobilellm PRIVATE
+        ${MOBILELLM_ROOT_DIR}/rust/crates/mobilellm-ffi/include
+    )
+    target_include_directories(mobilellm_static PRIVATE
+        ${MOBILELLM_ROOT_DIR}/rust/crates/mobilellm-ffi/include
+    )
+endif()
+
 # If llama.cpp is enabled, link against llama target
 if (MOBILELLM_ENABLE_LLAMACPP)
     target_compile_definitions(mobilellm PRIVATE MOBILELLM_ENABLE_LLAMACPP)

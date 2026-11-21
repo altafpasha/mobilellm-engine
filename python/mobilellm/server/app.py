@@ -253,6 +253,8 @@ class MobileLLMRequestHandler(BaseHTTPRequestHandler):
             req = ChatCompletionRequest.from_dict(body)
             # Compose prompt from messages
             prompt = "\n".join([f"{m.role}: {m.content}" for m in req.messages])
+            if req.messages and req.messages[-1].role != "assistant":
+                prompt += "\nassistant:"
             params = SamplingParams(
                 temperature=req.temperature,
                 top_p=req.top_p,

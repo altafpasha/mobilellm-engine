@@ -70,9 +70,6 @@ find_package(Threads REQUIRED)
 # Memory & Scheduler Subdirectory
 add_subdirectory(scheduler)
 
-# Core Runtime Subdirectory
-add_subdirectory(runtime)
-
 # Optional Rust Subsystem
 if (MOBILELLM_ENABLE_RUST)
     message(STATUS "MobileLLM: Optional Rust components ENABLED")
@@ -80,6 +77,9 @@ if (MOBILELLM_ENABLE_RUST)
 else()
     message(STATUS "MobileLLM: Rust components disabled (pure C++20 build)")
 endif()
+
+# Core Runtime Subdirectory
+add_subdirectory(runtime)
 
 # Developer Tools
 if (MOBILELLM_BUILD_TOOLS)

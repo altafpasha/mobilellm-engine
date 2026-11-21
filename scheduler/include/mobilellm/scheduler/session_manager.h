@@ -4,6 +4,7 @@
 #include "backends/common/backend.h"
 #include "mobilellm/scheduler/kv_cache_manager.h"
 #include <cstdint>
+#include <atomic>
 #include <unordered_map>
 #include <mutex>
 #include <vector>
